@@ -165,6 +165,7 @@ export class OmnigentIntegrationService {
         ...(text(value.version, 64) ? { version: text(value.version, 64)! } : {}),
         ...(text(value.authStatus ?? value.configured, 32) ? { authStatus: text(value.authStatus ?? value.configured, 32)! } : {}),
         ...(text(value.agentId) ? { agentId: text(value.agentId)! } : {}),
+        ...(text(value.harness) ? { harness: text(value.harness)! } : {}),
         ...(approved && Array.isArray(value.models) ? { models: value.models.slice(0, 200).map(model => object(model)).filter(model => text(model.id)).map(model => ({ id: text(model.id)!, ...(text(model.displayName) ? { displayName: text(model.displayName)! } : {}), isDefault: model.isDefault === true })) } : {}) };
     }
     const installedEngines = ENGINE_IDS.filter(id => engines[id]?.installed);
@@ -190,10 +191,17 @@ export class OmnigentIntegrationService {
   }
   async status(scope = 'local', fresh = false): Promise<OmnigentIntegrationStatus> {
     const installed = await this.reconcile(scope);
+    if (this.state.installationScope && this.state.installationScope !== scope) return this.publicStatus(installed, scope);
     if (installed && this.state.enabled && !this.active && (fresh || !this.lastCheck || Date.now() - this.lastCheck > 10_000)) {
       this.statusCheck ??= (async () => {
+        const operationId = this.state.operation?.id;
+        const generation = this.state.installedGeneration;
+        const approvalScope = this.state.approvalScope;
+        const enabled = this.state.enabled;
         const remote = this.state.loginConfirmed && this.state.approvalScope === scope;
         const response = await this.call(remote ? 'catalog' : 'status', remote ? {} : { localOnly: true });
+        if (this.active || operationId !== this.state.operation?.id || generation !== this.state.installedGeneration
+          || approvalScope !== this.state.approvalScope || enabled !== this.state.enabled) return;
         this.local = response.ok ? object(response.data) : { engines: this.local.engines, host: { connected: false } };
         this.lastCheck = Date.now();
       })().finally(() => { this.statusCheck = undefined; });

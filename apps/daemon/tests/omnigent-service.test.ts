@@ -136,6 +136,21 @@ describe('Omnigent native service', () => {
     await f.setup(); expect(f.adapter.mock.calls.filter(call => call[0].action === 'verify').map(call => call[0].engine)).toEqual(['claude']);
     expect((await f.service.status()).loginConfirmed).toBe(false);
   });
+  it('a foreign scope cannot replace the owning catalog with unapproved local inventory', async () => {
+    const f = await fixture(); await f.setup(); f.adapter.mockClear();
+    const original = f.adapter.getMockImplementation()!;
+    f.adapter.mockImplementation(async input => input.localOnly ? { ok: true, data: { host: { connected: false }, engines: {} } } : original(input));
+    const foreign = await f.service.status('other-workspace', true);
+    expect(foreign.loginConfirmed).toBe(false); expect(f.adapter).not.toHaveBeenCalled();
+    expect((await f.service.status()).phase).toBe('ready');
+  });
+  it('a slow pre-login status response cannot overwrite a completed setup catalog', async () => {
+    const f = await fixture(); let release!: () => void; const original = f.adapter.getMockImplementation()!;
+    f.adapter.mockImplementation(async input => { if (input.action === 'status' && input.localOnly) { await new Promise<void>(resolve => { release = resolve; }); return { ok: true, data: { host: { connected: false }, engines: {} } }; } return original(input); });
+    const first = f.service.status('local', true); await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await f.service.action({ action: 'setup', server: 'https://omni.example', username: 'fresh', password: 'transient' }); await f.service.waitForIdle();
+    release(); expect((await first).phase).toBe('ready'); expect((await f.service.status()).phase).toBe('ready');
+  });
   it('persists readiness and onboarding across daemon restart', async () => {
     const f = await fixture(); await f.setup(); const restarted = new OmnigentIntegrationService(f.options);
     const s = await restarted.status('local', true); expect(s.phase).toBe('ready'); expect(s.onboarding?.conversationId).toBe('chat-local');
