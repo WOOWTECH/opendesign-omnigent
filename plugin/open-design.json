@@ -3,7 +3,7 @@
   "specVersion": "1.0.0",
   "name": "woow-omnigent",
   "title": "Omnigent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Connect this OpenDesign container's installed agent engines to your Omnigent server using the native connection dialog.",
   "license": "Apache-2.0",
   "tags": [

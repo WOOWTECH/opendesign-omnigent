@@ -1,4 +1,6 @@
-# OpenCode pre-launch discovery: proposed OpenDesign-only SDK patch
+> This document preserves the original read-only discovery report. The reviewed patch was subsequently applied to the designated OpenDesign derivative, without changing the Omnigent server. Production checks confirmed HTTP 200 with 390 OpenCode models, an actual assistant reply and a stopped runner. SDK package metadata remains 0.16.0. The public patch installer verifies both source/result hashes.
+
+# OpenCode pre-launch discovery: OpenDesign-only SDK patch
 
 Confirmed defect: installed Omnigent 0.16.0 `HostProcess._handle_model_options`
 has no `opencode-native` branch. The canonical native OpenCode harness reaches
@@ -12,8 +14,7 @@ target, main checkout, or local SDK. Main owns the derivative image and rollout.
 
 ## Runtime evidence, 2026-10-12 UTC
 
-All target commands used read-only `kubectl exec` into namespace
-`paas-ws-7948b087`, pod `svc-61d5c868-open-design-0`, container `open-design`.
+All target commands used read-only `kubectl exec` into the designated OpenDesign container.
 Python ran with `-B`; no chats, configuration edits, engine installations,
 restarts, or deployment actions were performed.
 
@@ -27,7 +28,7 @@ restarts, or deployment actions were performed.
 | Read-only owned-host lookup | HTTP 200 JSON, online, 0.344 s |
 | Owned-host OpenCode model-options GET | HTTP 502, zero models, 0.424–0.605 s |
 
-The only host queried was `8da85eaaeb104d50a9f784e646e86265`, obtained from the
+The only host queried was the designated container identity, obtained from the
 `host.host_id` config metadata. Requests used official
 `omnigent.cli_auth.load_token(server)` in memory following Main's fresh GUI
 login. No token refresh/write, credential-file inspection, token output, raw

@@ -56,9 +56,15 @@ export function createBrowserOpenInvocation(
 
 export function openBrowser(url: string, deps: OpenBrowserDeps = {}): ChildProcess | null {
   const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  // A headless Linux daemon cannot open a desktop browser. Returning null
+  // lets callers such as the web external-URL helper navigate in the client.
+  if (platform === 'linux' && !env.DISPLAY?.trim() && !env.WAYLAND_DISPLAY?.trim()) {
+    return null;
+  }
   const spawn = deps.spawn ?? nodeSpawn;
   const warn = deps.warn ?? ((message: string) => console.warn(message));
-  const invocation = createBrowserOpenInvocation(platform, url, deps.env);
+  const invocation = createBrowserOpenInvocation(platform, url, env);
 
   try {
     const child = spawn(invocation.command, invocation.args, invocation.options);
