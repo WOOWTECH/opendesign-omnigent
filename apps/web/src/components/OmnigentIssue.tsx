@@ -2,11 +2,14 @@ import { useT } from '../i18n';
 import { safeOmnigentIssueCode } from '../providers/omnigent';
 import styles from './OmnigentIntegrationSection.module.css';
 
-export function useOmnigentIssueMessage(code?: string | null): string | null {
+export function useOmnigentIssueMessage(code?: string | null, engine = false): string | null {
   const t = useT();
   if (!code) return null;
   const safe = safeOmnigentIssueCode(code);
-  const message = safe === 'OPERATION_BUSY' ? t('omnigent.errorBusy')
+  const message = engine && ['OP_TIMEOUT', 'REPLY_TIMEOUT', 'NATIVE_START_TIMEOUT', 'TIMEOUT', 'ADAPTER_TIMEOUT'].includes(safe) ? t('omnigent.errorEngineTimeout')
+    : engine && ['MODELS_UNAVAILABLE', 'MODEL_UNAVAILABLE'].includes(safe) ? t('omnigent.errorModelCatalog')
+    : safe === 'NEEDS_AUTH' ? t('settings.agentAuthRequired')
+    : safe === 'OPERATION_BUSY' ? t('omnigent.errorBusy')
     : ['MISSING_DEPENDENCY', 'DEPENDENCY_MISSING', 'DEPENDENCIES_MISSING', 'ENGINE_UNAVAILABLE', 'NO_AVAILABLE_ENGINE'].includes(safe) ? t('omnigent.errorDependency')
     : ['AUTH_FAILED', 'LOGIN_FAILED', 'INVALID_CREDENTIALS', 'UNAUTHORIZED', 'FRESH_LOGIN_REQUIRED', 'NEEDS_LOGIN'].includes(safe) ? t('omnigent.errorAuth')
     : ['NEEDS_BROWSER_AUTH', 'UNSUPPORTED_AUTH'].includes(safe) ? t('omnigent.errorBrowserAuth')
@@ -18,7 +21,7 @@ export function useOmnigentIssueMessage(code?: string | null): string | null {
   return message;
 }
 
-export function OmnigentIssue({ code }: { code?: string | null }) {
-  const message = useOmnigentIssueMessage(code);
+export function OmnigentIssue({ code, engine = false }: { code?: string | null; engine?: boolean }) {
+  const message = useOmnigentIssueMessage(code, engine);
   return message ? <p className={styles.issue} role="alert">{message}</p> : null;
 }

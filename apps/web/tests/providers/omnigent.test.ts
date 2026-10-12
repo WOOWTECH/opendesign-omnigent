@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchOmnigentStatus, isOmnigentPlugin, OmnigentRequestError,
-  omnigentPublicUrl, runOmnigentAction, setupOmnigent,
+  omnigentProbeUrl, omnigentPublicUrl, runOmnigentAction, setupOmnigent, safeOmnigentIssueCode,
 } from '../../src/providers/omnigent';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -46,5 +46,31 @@ describe('native Omnigent request boundary', () => {
     expect(omnigentPublicUrl('https://omnigent.example')).toBe('https://omnigent.example/');
     for (const url of ['https://u:p@example.com', 'https://example.com?token=p', 'https://example.com#p', 'javascript:alert(1)'])
       expect(omnigentPublicUrl(url)).toBeNull();
+  });
+  it('maps only known native-auth, model-catalog and timeout receipt reasons', () => {
+    expect(safeOmnigentIssueCode('NATIVE_AUTH_REQUIRED')).toBe('NEEDS_AUTH');
+    expect(safeOmnigentIssueCode('needs-auth')).toBe('NEEDS_AUTH');
+    expect(safeOmnigentIssueCode('MODELS_UNAVAILABLE')).toBe('MODELS_UNAVAILABLE');
+    expect(safeOmnigentIssueCode('OP_TIMEOUT')).toBe('OP_TIMEOUT');
+    expect(safeOmnigentIssueCode('OP_TIMEOUT synthetic-private-output')).toBe('REQUEST_FAILED');
+  });
+  it('accepts only the matching existing session on the exact configured server and base path', () => {
+    expect(omnigentProbeUrl('https://omnigent.example', { sessionId: 'probe', url: 'https://omnigent.example/c/probe' }))
+      .toBe('https://omnigent.example/c/probe');
+    expect(omnigentProbeUrl('https://omnigent.example/tenant/', { sessionId: 'probe', url: 'https://omnigent.example/tenant/c/probe' }))
+      .toBe('https://omnigent.example/tenant/c/probe');
+  });
+  it.each([
+    'https://other.example/c/probe', 'https://omnigent.example.evil/c/probe',
+    'http://omnigent.example/c/probe', 'https://omnigent.example:8443/c/probe',
+    'https://u:p@omnigent.example/c/probe', 'https://omnigent.example/c/probe?token=p',
+    'https://omnigent.example/c/probe#p', 'https://omnigent.example/c/another',
+    'https://omnigent.example/redirect', 'javascript:alert(1)',
+  ])('rejects an unsafe or mismatched probe link %s', (url) => {
+    expect(omnigentProbeUrl('https://omnigent.example', { sessionId: 'probe', url })).toBeNull();
+  });
+  it('rejects missing session identity and a different configured base path', () => {
+    expect(omnigentProbeUrl('https://omnigent.example', { url: 'https://omnigent.example/c/probe' })).toBeNull();
+    expect(omnigentProbeUrl('https://omnigent.example/tenant', { sessionId: 'probe', url: 'https://omnigent.example/c/probe' })).toBeNull();
   });
 });

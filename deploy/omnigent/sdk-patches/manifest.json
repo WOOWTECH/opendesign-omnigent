@@ -1,0 +1,26 @@
+{
+  "sdkVersion": "0.16.0",
+  "scope": "OpenDesign derivative image only; proposed, not applied",
+  "targetNamespace": "paas-ws-7948b087",
+  "targetPod": "svc-61d5c868-open-design-0",
+  "targetContainer": "open-design",
+  "sdkRelativePath": "host/connect.py",
+  "targetSitePackagesGlob": "/opt/omnigent/venv/lib/python*/site-packages/omnigent",
+  "baseSha256": "1093a7c89de966c39e598f683b2651073abf613152e4e875676135bd28138ad1",
+  "replacementSha256": "2de8af76672e8008731c7fe4500eec059cd0d54b68091a8b364f631af911d75e",
+  "replacement": "replacement/host/connect.py",
+  "patch": "opencode-host-model-options.patch",
+  "cliBudgetSeconds": 10.0,
+  "hostBudgetSeconds": 12.0,
+  "serverRpcBudgetSeconds": 15.0,
+  "parserBaselineSha256": "8dc5c2add3bb4540887737a8f3d7ee2bbcfcc3c05a24bc14dc548e37648c5a0a",
+  "parserChanged": false,
+  "targetSdkFile": "/opt/omnigent/venv/lib/python3.12/site-packages/omnigent/host/connect.py",
+  "opencodeBinaryPath": "/usr/local/bin/opencode",
+  "tests": {
+    "command": "python3 -B -m unittest -v test_opencode_discovery",
+    "passed": 5,
+    "baselineRegressionExpectedExitCode": 1,
+    "livePatchApplied": false
+  }
+}

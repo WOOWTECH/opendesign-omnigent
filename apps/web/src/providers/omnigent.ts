@@ -4,6 +4,7 @@ import {
   type OmnigentActionRequest,
   type OmnigentActionResponse,
   type OmnigentIntegrationStatus,
+  type OmnigentReceipt,
   type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { workspaceProjectHeaders } from '../state/projects';
@@ -20,10 +21,22 @@ const SAFE_CODES = new Set([
   'DEPENDENCIES_MISSING', 'ADAPTER_TIMEOUT', 'ADAPTER_FAILED', 'OPERATION_INTERRUPTED',
   'INCOMPLETE_CHAT_VERIFICATION', 'SESSION_STOP_FAILED', 'NO_AVAILABLE_ENGINE',
   'INVALID_ENGINE', 'INVALID_MODEL', 'STATE_UNREADABLE',
+  'NEEDS_AUTH', 'MODELS_UNAVAILABLE', 'OP_TIMEOUT', 'REPLY_TIMEOUT', 'NATIVE_START_TIMEOUT',
+]);
+const ISSUE_ALIASES = new Map([
+  ['needs-auth', 'NEEDS_AUTH'], ['needs_auth', 'NEEDS_AUTH'],
+  ['AUTH_REQUIRED', 'NEEDS_AUTH'], ['NATIVE_AUTH_REQUIRED', 'NEEDS_AUTH'],
+  ['models_unavailable', 'MODELS_UNAVAILABLE'], ['op_timeout', 'OP_TIMEOUT'],
 ]);
 
 export function safeOmnigentIssueCode(code: unknown): string {
-  return typeof code === 'string' && SAFE_CODES.has(code) ? code : 'REQUEST_FAILED';
+  if (typeof code !== 'string') return 'REQUEST_FAILED';
+  const normalized = ISSUE_ALIASES.get(code) ?? code;
+  return SAFE_CODES.has(normalized) ? normalized : 'REQUEST_FAILED';
+}
+
+export function omnigentNeedsAgentAuth(code: unknown): boolean {
+  return safeOmnigentIssueCode(code) === 'NEEDS_AUTH';
 }
 
 export class OmnigentRequestError extends Error {
@@ -102,4 +115,19 @@ export function omnigentPublicUrl(server: string | null | undefined): string | n
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return null;
     return url.href;
   } catch { return null; }
+}
+
+/** Only the adapter's existing /c/:sessionId receipt on the configured server. */
+export function omnigentProbeUrl(
+  server: string | null | undefined,
+  receipt: Pick<OmnigentReceipt, 'url' | 'sessionId'> | undefined,
+): string | null {
+  const base = omnigentPublicUrl(server);
+  const probe = omnigentPublicUrl(receipt?.url);
+  const sessionId = receipt?.sessionId;
+  if (!base || !probe || !sessionId || !/^[A-Za-z0-9_-]{1,256}$/.test(sessionId)) return null;
+  const serverUrl = new URL(base);
+  const probeUrl = new URL(probe);
+  const path = `${serverUrl.pathname.replace(/\/+$/, '')}/c/${encodeURIComponent(sessionId)}`;
+  return probeUrl.origin === serverUrl.origin && probeUrl.pathname === path ? probeUrl.href : null;
 }

@@ -166,7 +166,7 @@ export class OmnigentIntegrationService {
         ...(text(value.authStatus ?? value.configured, 32) ? { authStatus: text(value.authStatus ?? value.configured, 32)! } : {}),
         ...(text(value.agentId) ? { agentId: text(value.agentId)! } : {}),
         ...(text(value.harness) ? { harness: text(value.harness)! } : {}),
-        ...(approved && Array.isArray(value.models) ? { models: value.models.slice(0, 200).map(model => object(model)).filter(model => text(model.id)).map(model => ({ id: text(model.id)!, ...(text(model.displayName) ? { displayName: text(model.displayName)! } : {}), isDefault: model.isDefault === true })) } : {}) };
+        ...(approved && Array.isArray(value.models) ? { models: value.models.slice(0, 1000).map(model => object(model)).filter(model => text(model.id)).map(model => ({ id: text(model.id)!, ...(text(model.displayName) ? { displayName: text(model.displayName)! } : {}), isDefault: model.isDefault === true })) } : {}) };
     }
     const installedEngines = ENGINE_IDS.filter(id => engines[id]?.installed);
     const hostId = text(rawHost.id ?? rawHost.host_id);

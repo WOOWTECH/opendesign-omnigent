@@ -151,6 +151,13 @@ describe('Omnigent native service', () => {
     await f.service.action({ action: 'setup', server: 'https://omni.example', username: 'fresh', password: 'transient' }); await f.service.waitForIdle();
     release(); expect((await first).phase).toBe('ready'); expect((await f.service.status()).phase).toBe('ready');
   });
+  it('keeps the full installed OpenCode catalog when it exceeds two hundred models', async () => {
+    const f = await fixture();
+    f.engines.opencode.models = Array.from({ length: 389 }, (_, index) => ({ id: `openrouter/provider/model-${index}` })).concat([{ id: 'anthropic/claude-sonnet' }]);
+    const result = await f.setup();
+    expect(result.phase).toBe('ready'); expect(result.engines.opencode?.models).toHaveLength(390);
+    expect(result.engines.opencode?.models?.some(model => model.id === result.verification.opencode?.model)).toBe(true);
+  });
   it('persists readiness and onboarding across daemon restart', async () => {
     const f = await fixture(); await f.setup(); const restarted = new OmnigentIntegrationService(f.options);
     const s = await restarted.status('local', true); expect(s.phase).toBe('ready'); expect(s.onboarding?.conversationId).toBe('chat-local');

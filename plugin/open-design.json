@@ -3,14 +3,31 @@
   "specVersion": "1.0.0",
   "name": "woow-omnigent",
   "title": "Omnigent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Connect this OpenDesign container's installed agent engines to your Omnigent server using the native connection dialog.",
   "license": "Apache-2.0",
-  "tags": ["integration", "omnigent"],
-  "compat": { "agentSkills": [{ "path": "./SKILL.md" }] },
+  "tags": [
+    "integration",
+    "omnigent"
+  ],
+  "compat": {
+    "agentSkills": [
+      {
+        "path": "./SKILL.md"
+      }
+    ]
+  },
   "od": {
     "kind": "skill",
-    "capabilities": ["prompt:inject"],
-    "context": { "skills": [{ "ref": "woow-omnigent" }] }
+    "capabilities": [
+      "prompt:inject"
+    ],
+    "context": {
+      "skills": [
+        {
+          "ref": "woow-omnigent"
+        }
+      ]
+    }
   }
 }

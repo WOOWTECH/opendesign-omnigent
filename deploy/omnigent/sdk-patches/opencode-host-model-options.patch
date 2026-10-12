@@ -1,0 +1,52 @@
+--- a/host/connect.py
++++ b/host/connect.py
+@@ -3273,6 +3273,49 @@
+                 error="the codex model probe failed — see the host log",
+             )
+ 
++        if harness == "opencode-native":
++            # Pre-launch previews use OpenCode's ambient CLI catalog; a bound
++            # session still resolves its own provider/model snapshot at launch.
++            # Keep CLI work below the server's 15-second model-options RPC
++            # deadline, without a forced cache refresh or a temporary server.
++            try:
++                from omnigent.config import load_effective_config
++                from omnigent.harness_startup_config import resolve_harness_command
++                from omnigent.harnesses.opencode_native.app_server import (
++                    list_opencode_cli_model_options,
++                )
++
++                def list_opencode_preview() -> list[dict[str, object]]:
++                    command = resolve_harness_command(
++                        "opencode-native", default="opencode", cfg=load_effective_config()
++                    )
++                    rows = list_opencode_cli_model_options(
++                        opencode_path=command, refresh=False, timeout=10.0
++                    )
++                    return with_source(rows)
++
++                opencode_models = await asyncio.wait_for(
++                    asyncio.to_thread(list_opencode_preview), timeout=12.0
++                )
++            except Exception:  # noqa: BLE001 — CLI stderr may contain credentials
++                return HostModelOptionsResultFrame(
++                    request_id=frame.request_id,
++                    status="failed",
++                    error="failed to resolve OpenCode model options",
++                )
++            if not opencode_models:
++                return HostModelOptionsResultFrame(
++                    request_id=frame.request_id,
++                    status="failed",
++                    error="OpenCode returned no model options",
++                )
++            return HostModelOptionsResultFrame(
++                request_id=frame.request_id,
++                status="ok",
++                models=opencode_models,
++                routable_models=[row["id"] for row in opencode_models],
++            )
++
+         if harness == "pi-native":
+             try:
+                 from omnigent.harnesses.pi_native.credentials import pi_native_model_options

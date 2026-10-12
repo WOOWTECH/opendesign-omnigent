@@ -1,6 +1,11 @@
 import type { Dict } from '../types';
 
 export const hu: Dict = {
+  'omnigent.errorEngineTimeout': "Engine verification timed out. Open the engine to review first-run setup, then verify again.",
+  'omnigent.errorModelCatalog': "The engine model catalog is unavailable. Review engine setup, refresh status, and verify again.",
+  'omnigent.openEngine': "Open engine",
+  'omnigent.openEngineHint': "Review engine setup in the existing verification conversation.",
+
   'omnigent.modules': "Available modules",
   'omnigent.engineVersionOld': "This agent version is unsupported. Review the native Local CLI requirements.",
 

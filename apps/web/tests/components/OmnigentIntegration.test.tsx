@@ -219,6 +219,45 @@ describe('native Omnigent integration', () => {
     expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(0);
   });
 
+  it('explains failed engine probes and opens only their existing conversations on the configured server', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(status({
+      loginConfirmed: true, server: 'https://omnigent.example',
+      verification: {
+        claude: { ok: false, reason: 'OP_TIMEOUT', sessionId: 'claude-probe', url: 'https://omnigent.example/c/claude-probe', reply: 'synthetic-private-output' },
+        opencode: { ok: false, reason: 'MODELS_UNAVAILABLE', sessionId: 'opencode-probe', url: 'https://omnigent.example/c/opencode-probe' },
+      },
+    })))));
+    renderIntegration();
+    expect(await screen.findByText('Engine verification timed out. Open the engine to review first-run setup, then verify again.')).toBeTruthy();
+    expect(screen.getByText('The engine model catalog is unavailable. Review engine setup, refresh status, and verify again.')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open engine' })[0]!);
+    expect(mocks.open).toHaveBeenCalledWith('https://omnigent.example/c/claude-probe');
+    expect(document.body.textContent).not.toContain('synthetic-private-output');
+  });
+
+  it('uses native sign-in guidance when a failed receipt needs engine authentication', async () => {
+    const onOpenAgentSettings = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(status({
+      loginConfirmed: true, verification: { claude: { ok: false, reason: 'NATIVE_AUTH_REQUIRED' } },
+    })))));
+    render(<OmnigentIntegrationProvider><OmnigentIntegrationSection onOpenAgentSettings={onOpenAgentSettings} /></OmnigentIntegrationProvider>);
+    expect(await screen.findByText('Authenticate with the vendor CLI (sign in or add API credentials) before returning to OpenDesign.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Local CLI' }));
+    expect(onOpenAgentSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render raw receipt reasons or a probe link for an unapproved owner', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(status({
+      loginConfirmed: false, server: 'https://omnigent.example', verification: {
+        claude: { ok: false, reason: 'synthetic-private-output', sessionId: 'probe', url: 'https://omnigent.example/c/probe' },
+      },
+    })))));
+    renderIntegration();
+    await screen.findByRole('button', { name: 'Configure' });
+    expect(document.body.textContent).not.toContain('synthetic-private-output');
+    expect(screen.queryByRole('button', { name: 'Open engine' })).toBeNull();
+  });
+
   it('ignores an enable response from a retired workspace identity', async () => {
     let finish!: (response: Response) => void;
     const fetch = vi.fn().mockImplementation((_url, request) => request?.method === 'POST'

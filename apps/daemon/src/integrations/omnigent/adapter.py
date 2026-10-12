@@ -768,7 +768,10 @@ class Adapter:
         if selected is None and not engine['models']:
             raise AdapterError('models_unavailable', '此引擎尚未提供可驗證的模型。')
         if selected is None:
-            selected = next((row['id'] for row in engine['models'] if row.get('isDefault')), engine['models'][0]['id'])
+            # A connection check can use a lighter listed model without changing
+            # the user's default for ordinary conversations.
+            selected = next((row['id'] for row in engine['models'] if key == 'claude' and row['id'] == 'haiku'),
+                            next((row['id'] for row in engine['models'] if row.get('isDefault')), engine['models'][0]['id']))
         if selected is not None and (not isinstance(selected, str) or selected not in {row["id"] for row in engine["models"]}):
             raise AdapterError("invalid_model", "選取的模型不在此 host 的實際模型清單內。")
         if self.clock() >= deadline:
@@ -798,6 +801,17 @@ class Adapter:
             # This is bounded by the same deadline and never answers a dialog,
             # retries a prompt, or changes the user's permission policy.
             if key == "claude":
+                # A fixed delay could deliver the initial event before the
+                # native runner has attached, leaving it as a startup draft.
+                startup_deadline = min(deadline, self.clock() + 30.0)
+                while self.clock() < startup_deadline:
+                    snapshot = self.api(client, 'GET', f'/v1/sessions/{quote(session_id, safe="")}')
+                    if snapshot.get('id') == session_id and snapshot.get('runner_online') is True:
+                        break
+                    self.sleep(min(1, max(0, startup_deadline - self.clock())))
+                else:
+                    result['reason'] = 'NATIVE_START_TIMEOUT'
+                    return result
                 self.sleep(min(3.0, max(0.0, deadline - self.clock())))
                 if self.clock() >= deadline:
                     result["reason"] = "NATIVE_START_TIMEOUT"

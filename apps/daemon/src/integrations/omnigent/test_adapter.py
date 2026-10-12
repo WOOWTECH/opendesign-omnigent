@@ -54,7 +54,8 @@ class Service:
         self.item_error = None
         self.message_error = None
         self.stop_error = None
-        self.runner_online = False
+        self.runner_online = True
+        self.keep_runner_online = False
         self.stop_snapshots = 0
         self.offline = False
         self.auth = None
@@ -101,6 +102,8 @@ class Service:
                 raise self.message_error
             if payload["type"] == "stop_session" and self.stop_error:
                 raise self.stop_error
+            if payload["type"] == "stop_session" and not self.keep_runner_online:
+                self.runner_online = False
             return {"ok": True}
         if "/items?" in path:
             if self.item_error:
@@ -236,6 +239,28 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(["--permission-mode", "default"], create["terminal_launch_args"])
         self.assertEqual(3.0, self.clock.now)
 
+    def test_claude_waits_for_native_runner_before_sending_fixed_probe(self):
+        old = self.service.request
+        attempts = []
+        def delayed(method, path, payload=None, **kwargs):
+            if path == '/v1/sessions/conv_owned' and not any(c[1].endswith('/events') and c[2].get('type') == 'message' for c in self.service.calls):
+                attempts.append(path)
+                return {'id': 'conv_owned', 'runner_online': len(attempts) >= 3}
+            return old(method, path, payload, **kwargs)
+        self.service.request = delayed
+        result = self.make(engine='claude').verify()
+        self.assertTrue(result['ok'])
+        self.assertEqual(3, len(attempts))
+        self.assertGreaterEqual(self.clock.now, 5)
+
+    def test_claude_health_uses_listed_haiku_but_explicit_choice_is_preserved(self):
+        self.service.models['claude'] = [{'id': 'opus', 'isDefault': True}, {'id': 'haiku'}]
+        result = self.make(engine='claude').verify()
+        self.assertEqual('haiku', result['model'])
+        self.service.runner_online = True
+        result = self.make(engine='claude', model='opus').verify()
+        self.assertEqual('opus', result['model'])
+
     def test_missing_or_partial_model_id_rejected_before_session(self):
         for value in ("model-a", "anthropic/unknown", ["anthropic/model-a"]):
             self.assert_code("INVALID_MODEL", self.make(engine="opencode", model=value).verify)
@@ -306,6 +331,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_acknowledged_stop_without_disconnected_runner_is_failure(self):
         self.service.runner_online = True
+        self.service.keep_runner_online = True
         result = self.make(engine="opencode").verify()
         self.assertFalse(result["ok"])
         self.assertTrue(result["sentinelVerified"])
