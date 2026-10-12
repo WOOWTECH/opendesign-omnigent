@@ -21,4 +21,4 @@ RUN python3 /usr/local/share/woow/patches/export-basehref.py /app/apps/web/out \
 LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
       io.woow.opendesign.upstream-revision="89e64d813bb1c7a11519b3f668f011f7017637d7" \
       io.woow.opendesign.artifact-sha256="${ARTIFACT_SHA256}" \
-      io.woow.opendesign.omnigent-integration="0.1.1"
+      io.woow.opendesign.omnigent-integration="0.1.2"

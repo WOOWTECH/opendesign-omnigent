@@ -111,7 +111,8 @@ class Service:
             return {"data": [{"role": "assistant", "type": "message", "content": [
                 {"type": "output_text", "text": adapter.SENTINEL}]}] if self.sentinel else []}
         if path == "/v1/sessions/conv_owned":
-            self.stop_snapshots += 1
+            if any(c[1].endswith("/events") and c[2]["type"] == "stop_session" for c in self.calls):
+                self.stop_snapshots += 1
             return {"id": "conv_owned", "runner_online": self.runner_online, "status": "idle"}
         raise AssertionError((method, path))
 
@@ -213,6 +214,7 @@ class BoundaryTests(unittest.TestCase):
         for key in ("codex", "pi"):
             with self.subTest(engine=key):
                 self.inventory[key]["installed"] = True
+                self.service.runner_online = True
                 result = self.make(engine=key, model="anthropic/model-a").verify()
                 self.assertTrue(result["ok"])
                 self.assertEqual("stopped", result["cleanup"])
@@ -252,6 +254,87 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(3, len(attempts))
         self.assertGreaterEqual(self.clock.now, 5)
+
+    def test_all_installed_native_engines_wait_for_cold_runner_before_one_probe(self):
+        for key in adapter.ENGINES:
+            with self.subTest(engine=key):
+                self.inventory[key]["installed"] = True
+                self.service = Service()
+                self.clock = Clock()
+                request = self.service.request
+                def cold(method, path, payload=None, **kwargs):
+                    sent = any(c[1].endswith("/events") and c[2]["type"] == "message" for c in self.service.calls)
+                    if method == "GET" and path == "/v1/sessions/conv_owned" and not sent:
+                        self.service.calls.append((method, path, payload, kwargs))
+                        return {"id": "conv_owned", "runner_online": self.clock.now >= 32}
+                    if payload and payload.get("type") == "message" and self.clock.now < 35:
+                        raise adapter.AdapterError("engine_not_ready", "Native startup is incomplete.")
+                    return request(method, path, payload, **kwargs)
+                self.service.request = cold
+                result = self.make(engine=key, timeoutSeconds=180).verify()
+                self.assertTrue(result["ok"])
+                self.assertEqual("stopped", result["cleanup"])
+                self.assertEqual(35, self.clock.now)
+                events = [c[2]["type"] for c in self.service.calls if c[1].endswith("/events")]
+                self.assertEqual(["message", "stop_session"], events)
+
+    def test_native_start_timeout_sends_no_probe_and_stops_owned_session(self):
+        request = self.service.request
+        def never_ready(method, path, payload=None, **kwargs):
+            if method == "GET" and path == "/v1/sessions/conv_owned":
+                self.service.runner_online = False
+            return request(method, path, payload, **kwargs)
+        self.service.request = never_ready
+        instance = self.make(engine="opencode", timeoutSeconds=180)
+        result = instance.verify()
+        self.assertFalse(result["ok"])
+        self.assertEqual("NATIVE_START_TIMEOUT", result["reason"])
+        self.assertEqual("stopped", result["cleanup"])
+        self.assertEqual(45, self.clock.now)
+        self.assertEqual(["stop_session"], [c[2]["type"] for c in self.service.calls if c[1].endswith("/events")])
+        self.assertEqual({}, instance.probe_journal())
+        self.assertEqual(set(), instance._owned_probes)
+
+    def test_slow_native_event_gets_45_seconds_without_resend_or_claude_recovery(self):
+        request = self.service.request
+        def slow(method, path, payload=None, **kwargs):
+            if payload and payload.get("type") == "message":
+                if kwargs["timeout_seconds"] < 20:
+                    raise adapter.AdapterError("operation_timeout", "Native delivery is still starting.")
+                self.clock.sleep(20)
+            if "/items?" in path and self.clock.now < 35:
+                return {"data": []}
+            return request(method, path, payload, **kwargs)
+        self.service.request = slow
+        instance = self.make(engine="opencode", timeoutSeconds=180)
+        instance.probe_submit = Mock(return_value=True)
+        result = instance.verify()
+        self.assertTrue(result["ok"])
+        self.assertEqual("stopped", result["cleanup"])
+        events = [c for c in self.service.calls if c[1].endswith("/events")]
+        self.assertEqual(["message", "stop_session"], [c[2]["type"] for c in events])
+        self.assertEqual(45, events[0][3]["timeout_seconds"])
+        instance.probe_submit.assert_not_called()
+
+    def test_native_event_budget_clamps_to_deadline_and_cleanup_keeps_own_budget(self):
+        request = self.service.request
+        def expires(method, path, payload=None, **kwargs):
+            if payload and payload.get("type") == "message":
+                self.clock.sleep(kwargs["timeout_seconds"])
+            if payload and payload.get("type") == "stop_session":
+                self.clock.sleep(6)
+            return request(method, path, payload, **kwargs)
+        self.service.request = expires
+        result = self.make(engine="opencode", timeoutSeconds=10).verify()
+        self.assertFalse(result["ok"])
+        self.assertEqual("OPERATION_TIMEOUT", result["reason"])
+        self.assertEqual("stopped", result["cleanup"])
+        events = [c for c in self.service.calls if c[1].endswith("/events")]
+        self.assertEqual(["message", "stop_session"], [c[2]["type"] for c in events])
+        self.assertEqual(7, events[0][3]["timeout_seconds"])
+        self.assertEqual(10, events[1][3]["timeout_seconds"])
+        self.assertIs(False, events[1][3]["refresh_auth"])
+        self.assertEqual(16, self.clock.now)
 
     def test_claude_health_uses_listed_haiku_but_explicit_choice_is_preserved(self):
         self.service.models['claude'] = [{'id': 'opus', 'isDefault': True}, {'id': 'haiku'}]
@@ -337,7 +420,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(result["sentinelVerified"])
         self.assertEqual("stop_unconfirmed", result["cleanup"])
         self.assertEqual("STOP_UNCONFIRMED", result["reason"])
-        self.assertEqual(20, self.clock.now)
+        self.assertEqual(23, self.clock.now)
 
     def test_stop_failure_does_not_overstate_verification(self):
         self.service.stop_error = adapter.AdapterError("server_unreachable", "safe")

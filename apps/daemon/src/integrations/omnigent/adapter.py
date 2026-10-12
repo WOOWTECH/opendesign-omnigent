@@ -794,16 +794,12 @@ class Adapter:
                   "url": f"{server}/c/{quote(session_id, safe='')}", "model": selected, "reason": "REPLY_TIMEOUT"}
         try:
             self.record_probe(session_id, {'server': server, 'hostId': catalog['host']['id'], 'title': body['title'], 'engine': key})
-            # Claude 2.1 can mount its initial Auto mode dialog after the first
-            # composer paint. In live tests an immediate first event left the
-            # probe in the draft after that dialog consumed Enter. Allow the
-            # newly created TUI to settle before sending the one test message.
-            # This is bounded by the same deadline and never answers a dialog,
-            # retries a prompt, or changes the user's permission policy.
-            if key == "claude":
-                # A fixed delay could deliver the initial event before the
-                # native runner has attached, leaving it as a startup draft.
-                startup_deadline = min(deadline, self.clock() + 30.0)
+            # A create acknowledgement does not prove native runner startup.
+            # Wait for this owned runner and let its TUI settle before the one
+            # test message. The wait shares the verification deadline and never
+            # answers a dialog, retries a prompt, or changes permission policy.
+            if key in ENGINES:
+                startup_deadline = min(deadline, self.clock() + 45.0)
                 while self.clock() < startup_deadline:
                     snapshot = self.api(client, 'GET', f'/v1/sessions/{quote(session_id, safe="")}')
                     if snapshot.get('id') == session_id and snapshot.get('runner_online') is True:
@@ -820,7 +816,7 @@ class Adapter:
             # initial_items passed on creation, so deliver one explicit event.
             self.api(client, "POST", f"/v1/sessions/{quote(session_id, safe='')}/events", {
                 "type": "message", "data": {"role": "user", "content": [
-                    {"type": "input_text", "text": PROBE_PROMPT}]}})
+                    {"type": "input_text", "text": PROBE_PROMPT}]}}, timeout_seconds=45.0)
             recover_after = self.clock() + 8.0
             while True:
                 page = self.api(client, "GET", f"/v1/sessions/{quote(session_id, safe='')}/items?limit=100&order=desc")

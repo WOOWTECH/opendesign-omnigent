@@ -3,7 +3,7 @@
 Install through OpenDesign's existing Plugins → Install from source dialog:
 
 ```
-github:WOOWTECH/opendesign-omnigent@v0.1.1/plugin
+github:WOOWTECH/opendesign-omnigent@v0.1.2/plugin
 ```
 
 Requires the WoowTech OpenDesign Omnigent build. A stock OpenDesign plugin cannot add privileged daemon APIs or new React settings components through its manifest; the compatible build provides the fixed native integration, and this package enables its lifecycle.
