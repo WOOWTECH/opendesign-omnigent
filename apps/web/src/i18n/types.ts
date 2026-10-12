@@ -30,6 +30,53 @@ export const LOCALE_LABEL: Record<Locale, string> = {
 // flat (not deeply nested) so missing-key TS errors point straight at the
 // offending string instead of a generic object mismatch.
 export interface Dict {
+  'omnigent.modules': string;
+  'omnigent.engineVersionOld': string;
+
+  'omnigent.errorBrowserAuth': string;
+  'omnigent.errorNetwork': string;
+  'omnigent.errorVerify': string;
+  'omnigent.errorModel': string;
+
+  'omnigent.setupTitle': string;
+  'omnigent.privateHint': string;
+  'omnigent.server': string;
+  'omnigent.username': string;
+  'omnigent.password': string;
+  'omnigent.connect': string;
+  'omnigent.running': string;
+  'omnigent.description': string;
+  'omnigent.notInstalled': string;
+  'omnigent.disabled': string;
+  'omnigent.ready': string;
+  'omnigent.needsSetup': string;
+  'omnigent.hostOnline': string;
+  'omnigent.hostOffline': string;
+  'omnigent.engines': string;
+  'omnigent.noEngines': string;
+  'omnigent.verified': string;
+  'omnigent.unverified': string;
+  'omnigent.engine': string;
+  'omnigent.allEngines': string;
+  'omnigent.model': string;
+  'omnigent.defaultModel': string;
+  'omnigent.configure': string;
+  'omnigent.enable': string;
+  'omnigent.verify': string;
+  'omnigent.open': string;
+  'omnigent.repair': string;
+  'omnigent.disconnect': string;
+  'omnigent.disable': string;
+  'omnigent.update': string;
+  'omnigent.refresh': string;
+  'omnigent.installHint': string;
+  'omnigent.errorBusy': string;
+  'omnigent.errorDependency': string;
+  'omnigent.errorAuth': string;
+  'omnigent.errorUrl': string;
+  'omnigent.errorUpdate': string;
+  'omnigent.errorGeneric': string;
+
   'billing.wallet': string;
   /** The product name of the allowance pool; kept untranslated in every locale. */
   'billing.codingPlanDesignPlan': string;

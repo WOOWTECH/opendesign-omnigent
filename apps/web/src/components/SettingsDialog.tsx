@@ -1,3 +1,4 @@
+import { OmnigentIntegrationSection } from './OmnigentIntegrationSection';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { Button, VisuallyHidden } from '@open-design/components';
@@ -5889,7 +5890,10 @@ export function SettingsDialog({
               }}
             />
           ) : null}
-          {activeSection === 'integrations' ? <IntegrationsSection /> : null}
+          {activeSection === 'integrations' ? <>
+            <OmnigentIntegrationSection onOpenAgentSettings={() => setActiveSection('execution')} />
+            <IntegrationsSection />
+          </> : null}
 
           {activeSection === 'mcpClient' ? <McpClientSection surface="settings" /> : null}
 

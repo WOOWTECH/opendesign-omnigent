@@ -1,3 +1,4 @@
+import { OmnigentIntegrationProvider, useOmnigentIntegration } from './components/OmnigentIntegrationProvider';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
@@ -928,8 +929,10 @@ export function App() {
   return (
     <MotionConfig reducedMotion="user">
       <IframeKeepAliveProvider>
-        <WorkspaceMemberDirectoryPreloader />
-        <AppInner />
+        <OmnigentIntegrationProvider>
+          <WorkspaceMemberDirectoryPreloader />
+          <AppInner />
+        </OmnigentIntegrationProvider>
       </IframeKeepAliveProvider>
     </MotionConfig>
   );
@@ -937,6 +940,7 @@ export function App() {
 
 function AppInner() {
   const { t } = useI18n();
+  const omnigentOnboardingProjectId = useOmnigentIntegration()?.status?.onboarding?.projectId;
   const iframeKeepAlivePool = useIframeKeepAlivePool();
   const clientType = useMemo(() => detectClientType(), []);
   const hostPlatform = useMemo(() => getOpenDesignHost()?.client.platform, []);
@@ -2445,6 +2449,10 @@ function AppInner() {
     const list = await listCurrentWorkspaceProjects({ workspaceView: workspaceProjectView });
     reconcileFetchedProjects(list, request);
   }, [beginProjectListRequest, listCurrentWorkspaceProjects, reconcileFetchedProjects, workspaceProjectView]);
+
+  useEffect(() => {
+    if (omnigentOnboardingProjectId) void refreshProjects();
+  }, [omnigentOnboardingProjectId, refreshProjects]);
 
   const refreshProjectsStrict = useCallback(async () => {
     const request = beginProjectListRequest(workspaceProjectView);

@@ -2426,11 +2426,15 @@ async function postGeneratedPluginShareAction(
   }
 }
 
-export async function upgradePlugin(id: string): Promise<PluginInstallOutcome> {
+export async function upgradePlugin(
+  id: string,
+  workspaceContext?: WorkspaceCollabContext | null,
+): Promise<PluginInstallOutcome> {
   const log: string[] = [];
   try {
     const resp = await fetch(`/api/plugins/${encodeURIComponent(id)}/upgrade`, {
       method: 'POST',
+      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) {
       const message = await readErrorMessage(resp);

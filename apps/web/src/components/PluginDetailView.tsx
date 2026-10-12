@@ -7,6 +7,8 @@
 // Developer-oriented provenance and manifest metadata remain available behind
 // a collapsed disclosure.
 
+import { isOmnigentPlugin } from '../providers/omnigent';
+import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@open-design/components';
 import type {
@@ -187,6 +189,7 @@ export function PluginDetailView(props: Props) {
     ? workspaceContextState.context
     : null;
   const { locale, t } = useI18n();
+  const omnigent = useOmnigentIntegration();
   const analytics = useAnalytics();
   const [plugin, setPlugin] = useState<InstalledPluginRecord | null>(null);
   const [error, setError] = useState<{ kind: 'load' | 'apply'; message: string } | null>(null);
@@ -290,6 +293,7 @@ export function PluginDetailView(props: Props) {
     : sourceLinks.sourceKindLabel;
 
   const onUse = async () => {
+    if (isOmnigentPlugin(plugin)) { await omnigent?.activate(); return; }
     trackPluginDetailClick(analytics.track, {
       page_name: 'plugins',
       area: 'plugin_detail',
@@ -498,11 +502,15 @@ export function PluginDetailView(props: Props) {
           variant="primary"
           className="plugin-detail__use"
           onClick={onUse}
-          disabled={applying}
+          disabled={applying || (isOmnigentPlugin(plugin) && omnigent?.busy)}
           data-testid="plugin-detail-use"
         >
-          {applying ? t('pluginCard.applying') : t('preview.usePlugin')}
+          {isOmnigentPlugin(plugin) ? t('omnigent.configure') : applying ? t('pluginCard.applying') : t('preview.usePlugin')}
         </Button>
+        {isOmnigentPlugin(plugin) && omnigent ? <Button disabled={omnigent.busy || !omnigent.status?.enabled}
+          onClick={() => void omnigent.run('update')} data-testid="omnigent-detail-update">
+          {t('omnigent.update')}
+        </Button> : null}
       </footer>
     </section>
   );

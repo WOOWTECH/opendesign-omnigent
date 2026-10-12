@@ -386,6 +386,27 @@ describe('PluginsView', () => {
     expect(mockedApplyPlugin).not.toHaveBeenCalled();
   });
 
+  it.each(['woow-omnigent', 'woow-omnigent-copy'])('opens native setup only after canonical %s installation', async (id) => {
+    const setup = vi.fn();
+    mockedInstallPluginSource.mockResolvedValueOnce({ ok: true, plugin: makePlugin(id, 'github', 'restricted'), warnings: [], message: 'Installed.', log: [] });
+    render(<PluginsView onSetupOmnigent={setup} />);
+    fireEvent.click(await screen.findByTestId('plugins-import-button'));
+    fireEvent.change(screen.getByLabelText('GitHub, archive, or marketplace source'), { target: { value: 'github:owner/plugin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Import a plugin' })).toBeNull());
+    expect(setup).toHaveBeenCalledTimes(id === 'woow-omnigent' ? 1 : 0);
+  });
+
+  it('uses native setup instead of a prompt handoff for canonical Omnigent', async () => {
+    const setup = vi.fn(); const onUsePlugin = vi.fn();
+    mockedListPlugins.mockResolvedValue([makePlugin('woow-omnigent', 'github', 'restricted')]);
+    render(<PluginsView onSetupOmnigent={setup} onUsePlugin={onUsePlugin} />);
+    fireEvent.click(await screen.findByTestId('plugins-home-use-woow-omnigent'));
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(onUsePlugin).not.toHaveBeenCalled();
+    expect(mockedApplyPlugin).not.toHaveBeenCalled();
+  });
+
   it('installs from a supported source string', async () => {
     render(<PluginsView />);
 

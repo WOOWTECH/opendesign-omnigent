@@ -22,6 +22,10 @@ import { ExtensionsMarketplace } from '../../src/components/PluginsView';
 import { I18nProvider } from '../../src/i18n';
 
 const analyticsTrack = vi.hoisted(() => vi.fn());
+const omnigent = vi.hoisted(() => ({ present: false, run: vi.fn(), activate: vi.fn() }));
+vi.mock('../../src/components/OmnigentIntegrationProvider', () => ({
+  useOmnigentIntegration: () => omnigent.present ? { busy: false, status: { enabled: true }, run: omnigent.run, activate: omnigent.activate } : null,
+}));
 
 vi.mock('../../src/analytics/provider', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/analytics/provider')>();
@@ -104,6 +108,7 @@ let installResolvers: Array<() => void>;
 let skillDetailFailuresRemaining: number;
 let skillDetailRequests: number;
 let uploadFolderFailureCode: string | null;
+let importedPluginId = 'imported-plugin';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -124,11 +129,13 @@ function installSuccessStream(id: string): Response {
 
 beforeEach(() => {
   workspaceContext = null;
+  omnigent.present = false; omnigent.run.mockClear(); omnigent.activate.mockClear();
   skills = [USER_SKILL, OFFICIAL_SKILL];
   installResolvers = [];
   skillDetailFailuresRemaining = 0;
   skillDetailRequests = 0;
   uploadFolderFailureCode = null;
+  importedPluginId = 'imported-plugin';
   analyticsTrack.mockClear();
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -173,7 +180,7 @@ beforeEach(() => {
       const body = JSON.parse(String(init?.body ?? '{}')) as { source?: string };
       // The dialog's URL import completes; a card install is held open so the
       // test can observe the in-flight UI.
-      if (body.source === IMPORT_URL) return installSuccessStream('imported-plugin');
+      if (body.source === IMPORT_URL) return installSuccessStream(importedPluginId);
       return new Promise<Response>((resolve) => {
         installResolvers.push(() => resolve(installSuccessStream('alpha-plugin')));
       });
@@ -421,6 +428,34 @@ describe('ExtensionsMarketplace import', () => {
         undefined,
       );
     });
+  });
+
+  it.each(['woow-omnigent', 'woow-omnigent-copy'])('runs native setup for canonical %s after Extensions import', async (id) => {
+    importedPluginId = id;
+    const setup = vi.fn();
+    const { container } = renderMarketplace({ onSetupOmnigent: setup });
+    fireEvent.click(container.querySelector('.plugin-marketplace__create')!);
+    const input = await waitFor(() => container.querySelector<HTMLInputElement>('input[placeholder="https://github.com/owner/plugin-repo"]')!);
+    fireEvent.change(input, { target: { value: IMPORT_URL } });
+    fireEvent.click(screen.getByText('Import and upload'));
+    await waitFor(() => expect(container.querySelector('.plugin-marketplace__create-panel')).toBeNull());
+    expect(setup).toHaveBeenCalledTimes(id === 'woow-omnigent' ? 1 : 0);
+  });
+
+  it('offers the native upgrade action on the installed Omnigent card', async () => {
+    omnigent.present = true;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn((input, init) => String(input).startsWith('/api/plugins')
+      ? Promise.resolve(jsonResponse({ plugins: [{
+        id: 'woow-omnigent', title: 'Omnigent', version: '0.1.0', sourceKind: 'user', source: IMPORT_URL,
+        trust: 'restricted', capabilitiesGranted: ['prompt:inject'], fsPath: '/plugin', installedAt: 0, updatedAt: 0,
+        manifest: { name: 'woow-omnigent', version: '0.1.0', title: 'Omnigent', od: { kind: 'bundle' } },
+      }] })) : originalFetch(input, init)) as typeof fetch;
+    renderMarketplace();
+    fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
+    fireEvent.click(await screen.findByTestId('omnigent-marketplace-update'));
+    expect(omnigent.run).toHaveBeenCalledWith('update');
+    expect(omnigent.activate).not.toHaveBeenCalled();
   });
 
   it('#132 — a successful plugin URL import keeps workspace authority and reveals the result', async () => {

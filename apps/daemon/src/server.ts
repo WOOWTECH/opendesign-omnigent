@@ -907,6 +907,9 @@ import { registerHostToolsRoutes } from './routes/host-tools.js';
 import { registerPluginAssetRoutes } from './routes/plugins/assets.js';
 import { registerPluginMarketplaceRoutes } from './routes/plugins/marketplaces.js';
 import { registerPluginEventRoutes, registerPluginRoutes, registerProjectPluginRoutes } from './routes/plugins/index.js';
+import { registerOmnigentRoutes } from './routes/omnigent.js';
+import { OMNIGENT_PLUGIN_ID, OmnigentIntegrationService } from './integrations/omnigent/service.js';
+import { createAuthorizeOmnigentRequest, createOmnigentInstallationLookup, createOmnigentOnboarding } from './integrations/omnigent/onboarding.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
 import { registerLiveArtifactRoutes } from './routes/live-artifact.js';
@@ -9692,6 +9695,29 @@ export async function startServer({
     id,
     source,
     userPluginsRoot: PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
+  });
+
+  const omnigentOnboarding = createOmnigentOnboarding({ db, projectsDir: PROJECTS_DIR });
+  const getOmnigentPlugin = createOmnigentInstallationLookup((context) => getWorkspacePluginForRequest(
+    db, OMNIGENT_PLUGIN_ID, context?.workspaceId ?? null,
+    context?.workspaceMemberId ?? null,
+  ));
+  const omnigentService = new OmnigentIntegrationService({
+    dataDir: RUNTIME_DATA_DIR,
+    getPlugin: (scope) => getOmnigentPlugin(omnigentOnboarding.context(scope)),
+    createOnboarding: omnigentOnboarding.create,
+  });
+  registerOmnigentRoutes(app, {
+    service: omnigentService,
+    origin: { resolvedPortRef },
+    authorize: createAuthorizeOmnigentRequest({
+      origin: { resolvedPortRef },
+      onboarding: omnigentOnboarding,
+      authorizeNativeRequest: (req) => apiAuthDisabled
+        || isLoopbackPeerAddress(req.socket?.remoteAddress)
+        || isApiTokenAuthorization(req.get('authorization')),
+      getPlugin: getOmnigentPlugin,
+    }),
   });
 
   registerPluginRoutes(app, {

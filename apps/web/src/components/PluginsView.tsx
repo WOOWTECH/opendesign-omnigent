@@ -1,3 +1,5 @@
+import { isOmnigentPlugin } from '../providers/omnigent';
+import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import {
   useCallback,
   useEffect,
@@ -10,7 +12,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Dialog } from '@open-design/components';
+import { Button, Dialog } from '@open-design/components';
 import {
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
   resolveLocalizedText,
@@ -218,6 +220,7 @@ const PLUGIN_SHARE_DETAILS: Record<PluginShareAction, {
 
 interface PluginsViewProps {
   onCreatePlugin?: (goal?: string) => void;
+  onSetupOmnigent?: () => Promise<void> | void;
   onUsePlugin?: (record: InstalledPluginRecord, action: PluginUseAction) => void;
   onCreatePluginShareProject?: (
     pluginId: string,
@@ -238,10 +241,17 @@ function resourceActionAnalyticsErrorCode(
 
 export function PluginsView({
   onCreatePlugin,
+  onSetupOmnigent,
   onUsePlugin,
   onCreatePluginShareProject,
 }: PluginsViewProps) {
   const { locale, t } = useI18n();
+  const omnigent = useOmnigentIntegration();
+  const setupOmnigentPlugin = onSetupOmnigent ?? omnigent?.activate;
+  const usePlugin = (record: InstalledPluginRecord, action: PluginUseAction) => {
+    if (isOmnigentPlugin(record)) { void setupOmnigentPlugin?.(); return; }
+    onUsePlugin?.(record, action);
+  };
   const analytics = useAnalytics();
   // Attaches the same workspace identity headers project reads already carry
   // (`workspaceProjectHeaders`), so the daemon's `GET /api/plugins` /
@@ -389,6 +399,7 @@ export function PluginsView({
       setImportOpen(false);
       await refresh();
       setActiveTab(targetTab);
+      if (isOmnigentPlugin(outcome.plugin)) await setupOmnigentPlugin?.();
     }
     return outcome;
   }
@@ -397,9 +408,14 @@ export function PluginsView({
     record: InstalledPluginRecord,
     action: PluginUseAction = 'use',
   ) {
+    if (isOmnigentPlugin(record)) {
+      setDetailsRecord(null);
+      void setupOmnigentPlugin?.();
+      return;
+    }
     if (onUsePlugin) {
       setDetailsRecord(null);
-      onUsePlugin(record, action);
+      usePlugin(record, action);
       return;
     }
     setPendingApplyId(record.id);
@@ -1020,6 +1036,7 @@ interface ExtensionsMarketplaceProps {
   /** EntryShell keeps this surface mounted while another nav view is visible. */
   isActive?: boolean;
   onCreatePlugin?: (goal?: string) => void;
+  onSetupOmnigent?: () => Promise<void> | void;
   onUsePlugin?: (record: InstalledPluginRecord, action: PluginUseAction) => void;
   /**
    * Hands a skill to the home composer as the run's preselected skill — the
@@ -1032,10 +1049,17 @@ interface ExtensionsMarketplaceProps {
 export function ExtensionsMarketplace({
   isActive = true,
   onCreatePlugin,
+  onSetupOmnigent,
   onUsePlugin,
   onUseSkill,
 }: ExtensionsMarketplaceProps) {
   const { locale, t } = useI18n();
+  const omnigent = useOmnigentIntegration();
+  const setupOmnigentPlugin = onSetupOmnigent ?? omnigent?.activate;
+  const usePlugin = (record: InstalledPluginRecord, action: PluginUseAction) => {
+    if (isOmnigentPlugin(record)) { void setupOmnigentPlugin?.(); return; }
+    onUsePlugin?.(record, action);
+  };
   const analytics = useAnalytics();
   // My own member id, to keep the Personal tab to resources I actually own.
   const {
@@ -1278,6 +1302,7 @@ export function ExtensionsMarketplace({
         await refresh();
         setCreateOpen(false);
         revealImported('plugin');
+        if (isOmnigentPlugin(outcome.plugin)) await setupOmnigentPlugin?.();
         setToast({ message: t('pluginsView.importPluginSuccess'), tone: 'success' });
         trackResourceResult({
           kind: 'expert_plugin', scope: 'personal', action: 'add', result: 'success', startedAt,
@@ -1308,6 +1333,7 @@ export function ExtensionsMarketplace({
           await refresh();
           setCreateOpen(false);
           revealImported('plugin');
+          if (isOmnigentPlugin(outcome.plugin)) await setupOmnigentPlugin?.();
           setToast({ message: t('pluginsView.uploadPluginSuccess'), tone: 'success' });
           trackResourceResult({
             kind: 'expert_plugin', scope: 'personal', action: 'add', result: 'success', startedAt,
@@ -1763,6 +1789,7 @@ export function ExtensionsMarketplace({
       }
       await refresh();
       await refreshSharedResources();
+      if (kind === 'plugins' && isOmnigentPlugin({ id })) await omnigent?.refresh();
       setMenuId(null);
       setConfirmUninstallId(null);
       setToast({ message: t('pluginsView.uninstallSuccess', { title }), tone: 'success' });
@@ -1789,6 +1816,7 @@ export function ExtensionsMarketplace({
         setCardDetail((current) =>
           current?.kind === 'available' && current.plugin.key === plugin.key ? null : current,
         );
+        if (isOmnigentPlugin(outcome.plugin)) await setupOmnigentPlugin?.();
         setToast({ message: t('pluginsView.installSuccess', { title }), tone: 'success' });
         trackResourceResult({
           kind: 'expert_plugin',
@@ -2272,6 +2300,14 @@ export function ExtensionsMarketplace({
                       ) : null}
                     </span>
 
+                    {card.action.kind === 'try' && isOmnigentPlugin(card.action.record) && omnigent ? (
+                      <Button size="sm" disabled={omnigent.busy || !omnigent.status?.enabled}
+                        data-testid="omnigent-marketplace-update"
+                        onClick={(event) => { event.stopPropagation(); void omnigent.run('update'); }}>
+                        {t('omnigent.update')}
+                      </Button>
+                    ) : null}
+
                     {card.action.kind === 'try' && onUsePlugin ? (
                       <button
                         type="button"
@@ -2283,7 +2319,7 @@ export function ExtensionsMarketplace({
                             id: action.record.id,
                             kind: 'expert_plugin',
                           });
-                          onUsePlugin(action.record, 'use');
+                          usePlugin(action.record, 'use');
                         }}
                       >
                         {t('pluginsView.tryIt')}
@@ -2454,7 +2490,7 @@ export function ExtensionsMarketplace({
             onClose={() => setCardDetail(null)}
             onUse={(record, action) => {
               setCardDetail(null);
-              onUsePlugin?.(record, action);
+              usePlugin(record, action);
             }}
             // The marketplace has no project to apply into; hide the Use action
             // when the shell did not hand us a handler for it.
@@ -2475,7 +2511,7 @@ export function ExtensionsMarketplace({
             }}
             onUseInstalled={(record) => {
               setCardDetail(null);
-              onUsePlugin?.(record, 'use');
+              usePlugin(record, 'use');
             }}
             onInstall={(plugin) => {
               void installAvailable(plugin, availablePluginTitle(plugin.entry, locale));

@@ -1,3 +1,5 @@
+> WoowTech Omnigent extension: see [setup, compatible build and deployment](README-OMNIGENT.md). Upstream OpenDesign documentation follows.
+
 <h1 align="center">OpenDesign: The open-source Claude Design alternative</h1>
 
 > ⚡ **[OpenDesign Cloud — the official model service.](https://open-design.ai/zh/pricing/)** One recharge to use both agent and image models inside OpenDesign: GPT, Claude, and DeepSeek for agents; GPT Image 2.0, Seedream 5.0 Pro, and Nano Banana 2.0 for images.
