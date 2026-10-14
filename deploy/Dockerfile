@@ -17,6 +17,11 @@ ENV https_proxy=${https_proxy}
 ENV no_proxy=${no_proxy}
 ENV NO_PROXY=${NO_PROXY}
 ENV CI=true
+# WoowTech: onnxruntime-node's postinstall downloads the CUDA execution-provider binaries
+# from github.com on linux/x64. These images never have a GPU, and that download is what
+# fails in the woow k3s build network (ECONNRESET mid-stream). The CPU binaries ship in the
+# npm package itself, so skipping only drops the unused CUDA EP.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 
 RUN apk add --no-cache python3 make g++
 
