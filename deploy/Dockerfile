@@ -1,5 +1,10 @@
 ARG NODE_IMAGE=docker.io/library/node:24-alpine
 ARG RUNTIME_IMAGE=docker.io/library/node:24-alpine
+# WoowTech: upstream's released image of the same OpenDesign version, used only as the
+# source of better-sqlite3's prebuilt binary (see the runtime stage). Pinned by digest.
+ARG UPSTREAM_PREBUILT_IMAGE=ghcr.io/nexu-io/od:0.24.1@sha256:587a992857d0f8b71011e4bc55c5851e33ef9fc4c169fc17e6447700ac428f22
+
+FROM ${UPSTREAM_PREBUILT_IMAGE} AS upstream-prebuilt
 
 FROM ${NODE_IMAGE} AS build
 
@@ -114,6 +119,22 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 # it on startup so the container ships with first-party atoms reachable
 # via the same registry path third-party plugins use.
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
+# WoowTech: use better-sqlite3's official prebuilt binary (as shipped in upstream's image)
+# instead of the copy node-gyp compiled here. Compiled against Node >= 24.19 headers,
+# node::ObjectWrap's destructor calls node::RemoveEnvironmentCleanupHook, and a Statement
+# collected by GC without a current Environment aborts the daemon with
+# "Assertion failed" / exit 134 (nodejs/node#65446). The prebuilt binary does not call it.
+# Same package version as upstream's image; fails the build if either side drifts.
+ARG BSQ=/app/apps/daemon/node_modules/.pnpm/better-sqlite3@12.10.0/node_modules/better-sqlite3
+COPY --from=upstream-prebuilt --chown=open-design:open-design ${BSQ}/build/Release/better_sqlite3.node /tmp/better_sqlite3.node
+RUN test -d "${BSQ}/build/Release" \
+    && rm -rf "${BSQ}/build" \
+    && mkdir -p "${BSQ}/build/Release" \
+    && mv /tmp/better_sqlite3.node "${BSQ}/build/Release/better_sqlite3.node" \
+    && chown -R open-design:open-design "${BSQ}/build" \
+    && ! grep -q RemoveEnvironmentCleanupHook "${BSQ}/build/Release/better_sqlite3.node" \
+    && cd /app/apps/daemon \
+    && node -e 'const D=require("better-sqlite3"); const db=new D(":memory:"); if (db.prepare("select 1 as x").get().x !== 1) process.exit(1); db.close(); console.log("better-sqlite3 prebuilt OK")'
 
 RUN mkdir -p /app/.od && \
     chown -R open-design:open-design /app
