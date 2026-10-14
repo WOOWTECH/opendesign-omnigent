@@ -22,6 +22,10 @@ ENV CI=true
 # fails in the woow k3s build network (ECONNRESET mid-stream). The CPU binaries ship in the
 # npm package itself, so skipping only drops the unused CUDA EP.
 ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+# WoowTech: better-sqlite3 has no musl prebuild for this Node, so node-gyp compiles it
+# and first downloads the Node headers from unofficial-builds.nodejs.org — the same
+# mid-stream ECONNRESET. The node image ships those exact headers in /usr/local/include/node.
+ENV npm_config_nodedir=/usr/local
 
 RUN apk add --no-cache python3 make g++
 
