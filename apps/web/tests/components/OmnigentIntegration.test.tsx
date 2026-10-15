@@ -41,6 +41,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('native Omnigent integration', () => {
+  it('renders no Settings section while the Omnigent plugin is not installed', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(json(status({ installed: false, enabled: false, onboarding: undefined }))));
+    vi.stubGlobal('fetch', fetch);
+    renderIntegration();
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByTestId('omnigent-integration-section')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Connect Omnigent' })).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([, request]) => request?.method === 'POST')).toHaveLength(0);
+  });
+
   it('keeps a disabled install disabled on reload and opens a fresh native form on enable', async () => {
     const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(
       json(request?.method === 'POST' ? { ok: true, status: status() } : status({ enabled: false })),
