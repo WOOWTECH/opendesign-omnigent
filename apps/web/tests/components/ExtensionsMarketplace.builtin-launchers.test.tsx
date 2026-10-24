@@ -117,6 +117,23 @@ function cardIds(container: HTMLElement): string[] {
 }
 
 describe('built-in launcher plugins on the Plugins page', () => {
+  it('leads the default (official) tab too, so they show as soon as the page opens', async () => {
+    const { container } = render(
+      <I18nProvider initial="zh-TW">
+        <ExtensionsMarketplace onCreatePlugin={vi.fn()} onUsePlugin={vi.fn()} />
+      </I18nProvider>,
+    );
+    await waitFor(() => {
+      expect(cardIds(container).slice(0, 2)).toEqual([
+        'plugins-card-woow-cli-terminal',
+        'plugins-card-woow-mcp-server',
+      ]);
+    });
+    expect(screen.getByTestId('plugins-card-open-woow-cli-terminal').getAttribute('href')).toBe('/console/');
+    expect(screen.getByTestId('plugins-card-builtin-woow-cli-terminal').textContent).toBe('內建');
+    expect(screen.getByTestId('plugins-tab-installed').textContent).toContain('已安裝');
+  });
+
   it('pins both launchers above personal plugins, leaving other bundled plugins out', async () => {
     const { container } = await renderInstalledTab();
     expect(cardIds(container)).toEqual([

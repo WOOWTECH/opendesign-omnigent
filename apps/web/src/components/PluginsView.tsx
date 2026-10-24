@@ -1653,7 +1653,7 @@ export function ExtensionsMarketplace({
   );
   // Built-in launchers are bundled, so `isPersonalPluginRecord` never admits
   // them; they are read from the hidden-inclusive catalogue and pinned above
-  // the personal (installed) list.
+  // the official (default) and personal (installed) lists.
   const launcherPlugins = useMemo(
     () => allInstalledPlugins
       .filter((record) => builtInLaunchPath(record) !== null)
@@ -1959,7 +1959,9 @@ export function ExtensionsMarketplace({
             .map((record) => pluginRecordCard(record, true)),
         ];
       if (scope === 'official') {
-        return availablePlugins.map((plugin) => {
+        // The built-in launchers also lead the default tab, so they are seen
+        // as soon as the Plugins page opens.
+        const officialCards: MarketCard[] = availablePlugins.map((plugin) => {
           const title = availablePluginTitle(plugin.entry, locale);
           const installed = plugin.installedRecord ?? null;
           return {
@@ -1983,6 +1985,7 @@ export function ExtensionsMarketplace({
             isShared: false,
           } satisfies MarketCard;
         });
+        return [...launcherPlugins.map(launcherCard), ...officialCards];
       }
       // team
       return [...sharedPluginIds].map((id) => {
