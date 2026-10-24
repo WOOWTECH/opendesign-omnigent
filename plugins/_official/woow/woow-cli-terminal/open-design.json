@@ -1,0 +1,32 @@
+{
+  "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
+  "name": "woow-cli-terminal",
+  "title": "CLI Terminal",
+  "title_i18n": {
+    "en": "CLI Terminal",
+    "zh-CN": "CLI 终端",
+    "zh-TW": "CLI 終端機"
+  },
+  "version": "0.1.0",
+  "description": "Open a web terminal to sign in to Claude Code, Codex and other CLIs.",
+  "description_i18n": {
+    "en": "Open a web terminal to sign in to Claude Code, Codex and other CLIs.",
+    "zh-CN": "打开网页终端，登录 Claude Code、Codex 等 CLI。",
+    "zh-TW": "開啟網頁終端機，登入 Claude Code、Codex 等 CLI。"
+  },
+  "license": "Apache-2.0",
+  "author": {
+    "name": "WoowTech"
+  },
+  "tags": [
+    "woow",
+    "built-in",
+    "launcher"
+  ],
+  "od": {
+    "launch": {
+      "path": "/console/"
+    }
+  }
+}

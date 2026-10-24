@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom';
 import { Button, Dialog } from '@open-design/components';
 import {
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
+  builtInLaunchPath,
   resolveLocalizedText,
   workspaceContextHasTeamIdentity,
   type ApplyResult,
@@ -967,6 +968,8 @@ type MarketCardAction =
   // A skill's row action. Skills are not installed — using one hands the
   // composer a preselected skill, the same way the home skill picker does.
   | { kind: 'use-skill'; skill: SkillSummary }
+  // A built-in launcher's only action: open its same-origin page in a new tab.
+  | { kind: 'open'; path: string }
   | { kind: 'none' };
 
 /**
@@ -1030,6 +1033,8 @@ interface MarketCard {
   stats: MarketCardStats | null;
   category: MarketCardCategory | null;
   isShared: boolean;
+  // Pinned built-in launcher (bundled plugin with `od.launch`).
+  builtIn?: boolean;
 }
 
 interface ExtensionsMarketplaceProps {
@@ -1057,6 +1062,7 @@ export function ExtensionsMarketplace({
   const omnigent = useOmnigentIntegration();
   const setupOmnigentPlugin = onSetupOmnigent ?? omnigent?.activate;
   const usePlugin = (record: InstalledPluginRecord, action: PluginUseAction) => {
+    if (builtInLaunchPath(record) !== null) return;
     if (isOmnigentPlugin(record)) { void setupOmnigentPlugin?.(); return; }
     onUsePlugin?.(record, action);
   };
@@ -1645,6 +1651,15 @@ export function ExtensionsMarketplace({
     () => buildAvailablePlugins(marketplaces, allInstalledPlugins),
     [marketplaces, allInstalledPlugins],
   );
+  // Built-in launchers are bundled, so `isPersonalPluginRecord` never admits
+  // them; they are read from the hidden-inclusive catalogue and pinned above
+  // the personal (installed) list.
+  const launcherPlugins = useMemo(
+    () => allInstalledPlugins
+      .filter((record) => builtInLaunchPath(record) !== null)
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    [allInstalledPlugins],
+  );
   const userSkills = useMemo(() => skills.filter(isPersonalSkillRecord), [skills]);
   const officialSkills = useMemo(
     () => skills.filter((skill) => skill.source !== 'user'),
@@ -1912,18 +1927,37 @@ export function ExtensionsMarketplace({
       };
     };
 
+    const launcherCard = (record: InstalledPluginRecord): MarketCard => ({
+      id: record.id,
+      title: localizePluginTitle(locale, record),
+      description: localizePluginDescription(locale, record) || '',
+      accent: marketAccent(record.id),
+      action: { kind: 'open', path: builtInLaunchPath(record)! },
+      detail: { kind: 'plugin', record },
+      share: null,
+      unshare: null,
+      uninstall: null,
+      stats: null,
+      category: null,
+      isShared: false,
+      builtIn: true,
+    });
+
     if (mode === 'plugins') {
       if (scope === 'personal')
-        return userPlugins
-          // A locally-present plugin that is team-shared by someone ELSE is not
-          // personal — it belongs in the Team tab only. Keep unshared plugins and
-          // the ones I own.
-          .filter(
-            (record) =>
-              !sharedPluginIds.has(record.id) ||
-              sharedResourceIsMine(sharedPluginMeta.get(record.id), myMemberId),
-          )
-          .map((record) => pluginRecordCard(record, true));
+        return [
+          ...launcherPlugins.map(launcherCard),
+          ...userPlugins
+            // A locally-present plugin that is team-shared by someone ELSE is not
+            // personal — it belongs in the Team tab only. Keep unshared plugins and
+            // the ones I own.
+            .filter(
+              (record) =>
+                !sharedPluginIds.has(record.id) ||
+                sharedResourceIsMine(sharedPluginMeta.get(record.id), myMemberId),
+            )
+            .map((record) => pluginRecordCard(record, true)),
+        ];
       if (scope === 'official') {
         return availablePlugins.map((plugin) => {
           const title = availablePluginTitle(plugin.entry, locale);
@@ -2020,6 +2054,7 @@ export function ExtensionsMarketplace({
     scope,
     locale,
     userPlugins,
+    launcherPlugins,
     availablePlugins,
     sharedPluginIds,
     sharedPluginMeta,
@@ -2249,7 +2284,8 @@ export function ExtensionsMarketplace({
               const rowHasRunOrInstall =
                 (card.action.kind === 'try' && Boolean(onUsePlugin)) ||
                 (card.action.kind === 'use-skill' && Boolean(onUseSkill)) ||
-                card.action.kind === 'install';
+                card.action.kind === 'install' ||
+                card.action.kind === 'open';
               const menuActions = [
                 ...(rowHasRunOrInstall && card.share ? (['share'] as const) : []),
                 ...(rowHasRunOrInstall && card.unshare ? (['unshare'] as const) : []),
@@ -2284,6 +2320,14 @@ export function ExtensionsMarketplace({
                     <span className="plugin-marketplace__row-main">
                       <span className="plugin-marketplace__name-row">
                         <strong>{card.title}</strong>
+                        {card.builtIn ? (
+                          <span
+                            className="plugin-marketplace__builtin-badge"
+                            data-testid={`plugins-card-builtin-${card.id}`}
+                          >
+                            {t('pluginsView.builtInBadge')}
+                          </span>
+                        ) : null}
                         {scope === 'personal' && card.isShared ? (
                           <span className="plugin-marketplace__team-badge">
                             <Icon name="users" size={11} />
@@ -2308,7 +2352,22 @@ export function ExtensionsMarketplace({
                       </Button>
                     ) : null}
 
-                    {card.action.kind === 'try' && onUsePlugin ? (
+                    {card.action.kind === 'open' ? (
+                      // A real root-absolute anchor (not window.open): the Home
+                      // Assistant shell rewrites anchor hrefs to add its ingress
+                      // prefix, which a computed URL would bypass.
+                      <a
+                        className="plugin-marketplace__row-action"
+                        href={card.action.path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid={`plugins-card-open-${card.id}`}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        {t('pluginsView.open')}
+                      </a>
+                    ) : card.action.kind === 'try' && onUsePlugin ? (
                       <button
                         type="button"
                         className="plugin-marketplace__row-action"

@@ -1398,6 +1398,8 @@ export const fr: Dict = {
   "pluginsView.emptyOfficialSkillsTitle": "Aucun Skill officiel disponible",
   "pluginsView.emptyOfficialHint": "Revenez plus tard, ou ajoutez une marketplace dans les sources de plugins.",
   "pluginsView.teamSharedBadge": "Partagé avec l'équipe",
+  "pluginsView.builtInBadge": "Built-in",
+  "pluginsView.open": "Open",
   "pluginsView.tryIt": "Essayer",
   "pluginsView.categoriesAria": "Catégories",
   "pluginsView.statSkills": "{count} Skills",

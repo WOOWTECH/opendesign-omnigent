@@ -3,6 +3,8 @@ import {
   OPEN_DESIGN_PLUGIN_SPEC_VERSION,
   MarketplacePluginEntrySchema,
   PluginManifestSchema,
+  builtInLaunchPath,
+  isSameOriginLaunchPath,
   resolveLocalizedText,
 } from '../src/plugins/index.js';
 
@@ -107,5 +109,50 @@ describe('plugin manifest localized text', () => {
   it('falls back from exact locale to base language, English, then first value', () => {
     expect(resolveLocalizedText({ en: 'English', zh: '中文' }, 'zh-CN')).toBe('中文');
     expect(resolveLocalizedText({ 'zh-CN': '中文' }, 'fr')).toBe('中文');
+  });
+});
+
+describe('plugin manifest od.launch', () => {
+  const withLaunch = (launchPath: string) => ({
+    name: 'sample-launcher',
+    version: '1.0.0',
+    od: { launch: { path: launchPath } },
+  });
+
+  it.each(['/console/', '/mcp-admin/', '/console/?tab=1#top', '/a/b.c/'])(
+    'accepts same-origin path %s and keeps it',
+    (launchPath) => {
+      const manifest = PluginManifestSchema.parse(withLaunch(launchPath));
+      expect(manifest.od?.launch?.path).toBe(launchPath);
+    },
+  );
+
+  it.each([
+    '',
+    'console/',
+    '//evil.example/x',
+    '/\\evil.example',
+    'https://evil.example/',
+    'javascript:alert(1)',
+    '/console/../api',
+    '/console/%2e%2e/api',
+    '/%2F%2Fevil.example',
+    '/con sole/',
+    '/..',
+  ])('rejects %j', (launchPath) => {
+    expect(PluginManifestSchema.safeParse(withLaunch(launchPath)).success).toBe(false);
+    expect(isSameOriginLaunchPath(launchPath)).toBe(false);
+  });
+
+  it('honours od.launch only on bundled records', () => {
+    const manifest = PluginManifestSchema.parse(withLaunch('/console/'));
+    expect(builtInLaunchPath({ sourceKind: 'bundled', manifest })).toBe('/console/');
+    expect(builtInLaunchPath({ sourceKind: 'user', manifest })).toBeNull();
+    expect(builtInLaunchPath({ sourceKind: 'bundled', manifest: { name: 'x', version: '1' } })).toBeNull();
+    // Records read back from storage are re-checked.
+    expect(builtInLaunchPath({
+      sourceKind: 'bundled',
+      manifest: { od: { launch: { path: '//evil.example' } } },
+    })).toBeNull();
   });
 });

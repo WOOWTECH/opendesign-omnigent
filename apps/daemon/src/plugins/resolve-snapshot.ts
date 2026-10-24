@@ -30,6 +30,7 @@ import type {
   ProjectScenarioBindingProvenance,
   ProjectScenarioTaskProfile,
 } from '@open-design/contracts';
+import { builtInLaunchPath } from '@open-design/contracts';
 import {
   applyPlugin,
   InternalBundledStrategyApplyError,
@@ -293,6 +294,20 @@ export function resolvePluginSnapshot(input: ResolveSnapshotInput): ResolveSnaps
         error: {
           code: 'plugin-not-found',
           message: `Plugin "${fields.pluginId}" is not installed.`,
+          data: { pluginId: fields.pluginId },
+        },
+      },
+    };
+  }
+  if (builtInLaunchPath(plugin) !== null) {
+    return {
+      ok: false,
+      status: 409,
+      exitCode: 72,
+      body: {
+        error: {
+          code: 'plugin-not-applicable',
+          message: `Plugin "${fields.pluginId}" is a launcher and cannot be applied.`,
           data: { pluginId: fields.pluginId },
         },
       },

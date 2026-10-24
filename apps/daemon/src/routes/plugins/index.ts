@@ -7,7 +7,7 @@ import type {
   ProjectMetadata,
   WorkspaceCollabContext,
 } from '@open-design/contracts';
-import { TeamResourceCopyForbiddenError } from '@open-design/contracts';
+import { TeamResourceCopyForbiddenError, builtInLaunchPath } from '@open-design/contracts';
 import {
   duplicatePluginExampleIntoProject,
   PluginDuplicateProjectError,
@@ -429,6 +429,11 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     plugin: InstalledPluginLike,
     registry: unknown,
   ) => {
+    // A built-in launcher only opens a same-origin page; it carries no prompt
+    // or skill, so there is nothing to apply.
+    if (builtInLaunchPath(plugin) !== null) {
+      return res.status(409).json({ error: { code: 'plugin-not-applicable', message: 'launcher plugins open a page and cannot be applied' } });
+    }
     const body = req.body && typeof req.body === 'object'
       ? req.body as Record<string, unknown>
       : {};
@@ -710,6 +715,9 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       if (!plugin) return res.status(404).json({ error: { code: 'plugin-not-found', message: 'plugin not found' } });
       if (typeof plugin.id !== 'string' || typeof plugin.fsPath !== 'string') {
         return res.status(422).json({ error: { code: 'plugin-not-duplicable', message: 'plugin record is missing a filesystem source' } });
+      }
+      if (builtInLaunchPath(plugin) !== null) {
+        return res.status(422).json({ error: { code: 'plugin-not-duplicable', message: 'launcher plugins cannot be duplicated' } });
       }
       // AC-9 copy red-line (D3): a frozen team plugin cannot be duplicated into a
       // personal project. Runs before any project is created (nothing to clean up

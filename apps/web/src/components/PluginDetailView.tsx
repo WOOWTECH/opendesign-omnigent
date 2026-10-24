@@ -11,9 +11,10 @@ import { isOmnigentPlugin } from '../providers/omnigent';
 import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@open-design/components';
-import type {
-  InstalledPluginRecord,
-  PluginConnectorRef,
+import {
+  builtInLaunchPath,
+  type InstalledPluginRecord,
+  type PluginConnectorRef,
 } from '@open-design/contracts';
 import {
   applyPlugin,
@@ -285,14 +286,23 @@ export function PluginDetailView(props: Props) {
   const examples = od.useCase?.exampleOutputs ?? [];
   const sourceLinks = derivePluginSourceLinks(plugin);
   const official = isOfficialPlugin(plugin);
-  const author = official
-    ? '@OpenDesign'
-    : (sourceLinks.authorName || sourceLinks.sourceLabel);
-  const badge = official
-    ? t('pluginDetail.officialBadge')
-    : sourceLinks.sourceKindLabel;
+  // Built-in launchers only open a same-origin page: no commands, connections,
+  // skills, install command or Use action apply to them.
+  const launchPath = builtInLaunchPath(plugin);
+  const launcherAuthor = plugin.manifest.author?.name?.trim();
+  const author = launchPath !== null && launcherAuthor
+    ? `@${launcherAuthor}`
+    : official
+      ? '@OpenDesign'
+      : (sourceLinks.authorName || sourceLinks.sourceLabel);
+  const badge = launchPath !== null
+    ? t('pluginsView.builtInBadge')
+    : official
+      ? t('pluginDetail.officialBadge')
+      : sourceLinks.sourceKindLabel;
 
   const onUse = async () => {
+    if (launchPath !== null) return;
     if (isOmnigentPlugin(plugin)) { await omnigent?.activate(); return; }
     trackPluginDetailClick(analytics.track, {
       page_name: 'plugins',
@@ -350,65 +360,69 @@ export function PluginDetailView(props: Props) {
         <p className="plugin-suite-detail__description">{localizedDescription}</p>
       ) : null}
 
-      <DetailSection id="quick-commands" title={t('pluginDetail.quickCommands')} count={0}>
-        <div className="plugin-suite-detail__command-list">
-          <div className="plugin-suite-detail__empty-row">
-            {t('pluginDetail.noQuickCommands')}
-          </div>
-        </div>
-      </DetailSection>
-
-      <DetailSection
-        id="data-connections"
-        title={t('pluginDetail.dataConnections')}
-        count={connections.length}
-      >
-        <div className="plugin-suite-detail__connection-list">
-          {connections.length > 0 ? connections.map((row) => (
-            <div key={row.id} className="plugin-suite-detail__connection">
-              <span aria-hidden />
-              <div className="plugin-suite-detail__connection-meta">
-                <strong>{row.id}</strong>
-                {row.tools.length > 0 ? (
-                  <small>{row.tools.join(', ')}</small>
-                ) : null}
+      {launchPath === null ? (
+        <>
+          <DetailSection id="quick-commands" title={t('pluginDetail.quickCommands')} count={0}>
+            <div className="plugin-suite-detail__command-list">
+              <div className="plugin-suite-detail__empty-row">
+                {t('pluginDetail.noQuickCommands')}
               </div>
-              <em>{localizePluginChrome(locale, row.requirement)}</em>
             </div>
-          )) : (
-            <div className="plugin-suite-detail__empty-row">
-              {t('pluginDetail.noDataConnections')}
-            </div>
-          )}
-        </div>
-      </DetailSection>
+          </DetailSection>
 
-      <DetailSection
-        id="knowledge-skills"
-        title={t('pluginDetail.knowledgeSkills')}
-        count={skills.length}
-      >
-        <div className="plugin-suite-detail__skill-list">
-          {skills.length > 0 ? skills.map((skill) => {
-            const description = (
-              skillDescriptionState.pluginId === props.pluginId
-              && plugin.id === props.pluginId
-            )
-              ? skillDescriptionState.descriptions[skill.key]
-              : '';
-            return (
-              <article key={skill.key} className="plugin-suite-detail__skill">
-                <h3>{skill.label}</h3>
-                {description ? <p>{description}</p> : null}
-              </article>
-            );
-          }) : (
-            <div className="plugin-suite-detail__empty-row">
-              {t('pluginDetail.noKnowledgeSkills')}
+          <DetailSection
+            id="data-connections"
+            title={t('pluginDetail.dataConnections')}
+            count={connections.length}
+          >
+            <div className="plugin-suite-detail__connection-list">
+              {connections.length > 0 ? connections.map((row) => (
+                <div key={row.id} className="plugin-suite-detail__connection">
+                  <span aria-hidden />
+                  <div className="plugin-suite-detail__connection-meta">
+                    <strong>{row.id}</strong>
+                    {row.tools.length > 0 ? (
+                      <small>{row.tools.join(', ')}</small>
+                    ) : null}
+                  </div>
+                  <em>{localizePluginChrome(locale, row.requirement)}</em>
+                </div>
+              )) : (
+                <div className="plugin-suite-detail__empty-row">
+                  {t('pluginDetail.noDataConnections')}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </DetailSection>
+          </DetailSection>
+
+          <DetailSection
+            id="knowledge-skills"
+            title={t('pluginDetail.knowledgeSkills')}
+            count={skills.length}
+          >
+            <div className="plugin-suite-detail__skill-list">
+              {skills.length > 0 ? skills.map((skill) => {
+                const description = (
+                  skillDescriptionState.pluginId === props.pluginId
+                  && plugin.id === props.pluginId
+                )
+                  ? skillDescriptionState.descriptions[skill.key]
+                  : '';
+                return (
+                  <article key={skill.key} className="plugin-suite-detail__skill">
+                    <h3>{skill.label}</h3>
+                    {description ? <p>{description}</p> : null}
+                  </article>
+                );
+              }) : (
+                <div className="plugin-suite-detail__empty-row">
+                  {t('pluginDetail.noKnowledgeSkills')}
+                </div>
+              )}
+            </div>
+          </DetailSection>
+        </>
+      ) : null}
 
       {hasPreview ? (
         <DetailSection id="preview" title={t('common.preview')} count={1}>
@@ -486,9 +500,11 @@ export function PluginDetailView(props: Props) {
             {localizePluginChrome(locale, 'developerDetails')}
           </summary>
           <div>
-            <div className="plugins-view__install-command">
-              <code>{buildPluginInstallCommand(plugin)}</code>
-            </div>
+            {launchPath === null ? (
+              <div className="plugins-view__install-command">
+                <code>{buildPluginInstallCommand(plugin)}</code>
+              </div>
+            ) : null}
             <PluginMetaSections
               record={plugin}
               omit={{ byline: true, description: true, query: true }}
@@ -498,15 +514,29 @@ export function PluginDetailView(props: Props) {
       </section>
 
       <footer className="plugin-suite-detail__section">
-        <Button
-          variant="primary"
-          className="plugin-detail__use"
-          onClick={onUse}
-          disabled={applying || (isOmnigentPlugin(plugin) && omnigent?.busy)}
-          data-testid="plugin-detail-use"
-        >
-          {isOmnigentPlugin(plugin) ? t('omnigent.configure') : applying ? t('pluginCard.applying') : t('preview.usePlugin')}
-        </Button>
+        {launchPath !== null ? (
+          // Real root-absolute anchor so the Home Assistant shell can add its
+          // ingress prefix; never a computed URL or window.open.
+          <a
+            className="plugin-marketplace__row-action"
+            href={launchPath}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="plugin-detail-open"
+          >
+            {t('pluginsView.open')}
+          </a>
+        ) : (
+          <Button
+            variant="primary"
+            className="plugin-detail__use"
+            onClick={onUse}
+            disabled={applying || (isOmnigentPlugin(plugin) && omnigent?.busy)}
+            data-testid="plugin-detail-use"
+          >
+            {isOmnigentPlugin(plugin) ? t('omnigent.configure') : applying ? t('pluginCard.applying') : t('preview.usePlugin')}
+          </Button>
+        )}
         {isOmnigentPlugin(plugin) && omnigent ? <Button disabled={omnigent.busy || !omnigent.status?.enabled}
           onClick={() => void omnigent.run('update')} data-testid="omnigent-detail-update">
           {t('omnigent.update')}

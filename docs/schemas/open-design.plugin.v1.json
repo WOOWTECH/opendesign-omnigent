@@ -150,7 +150,16 @@
           "type": "array",
           "items": { "$ref": "#/$defs/InputField" }
         },
-        "capabilities": { "type": "array", "items": { "type": "string" } }
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "launch": {
+          "type": "object",
+          "description": "Launcher plugin: opens a same-origin path in a new tab instead of applying prompts. Honoured for bundled plugins only.",
+          "required": ["path"],
+          "properties": {
+            "path": { "type": "string", "pattern": "^/(?![/\\\\])" }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     }

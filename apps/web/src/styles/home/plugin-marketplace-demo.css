@@ -509,7 +509,8 @@
   gap: 6px;
   min-width: 0;
 }
-.plugin-marketplace__team-badge {
+.plugin-marketplace__team-badge,
+.plugin-marketplace__builtin-badge {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -574,6 +575,11 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* Built-in launchers render their row action as a real anchor. */
+a.plugin-marketplace__row-action {
+  text-decoration: none;
 }
 
 .plugin-marketplace__row-action:hover:not(:disabled) {

@@ -1398,6 +1398,8 @@ export const ptBR: Dict = {
   "pluginsView.emptyOfficialSkillsTitle": "No official skills available",
   "pluginsView.emptyOfficialHint": "Check back later, or add a marketplace in plugin sources.",
   "pluginsView.teamSharedBadge": "Shared with team",
+  "pluginsView.builtInBadge": "Built-in",
+  "pluginsView.open": "Open",
   "pluginsView.tryIt": "Try it",
   "pluginsView.categoriesAria": "Categories",
   "pluginsView.statSkills": "{count} skills",

@@ -136,6 +136,35 @@ export const PluginConnectorRefSchema = z.object({
 
 export type PluginConnectorRef = z.infer<typeof PluginConnectorRefSchema>;
 
+// A launch path must stay on the page's own origin: root-absolute ('/x'),
+// never protocol-relative ('//host'), never a scheme ('javascript:'), never a
+// backslash (browsers read '/\host' as '//host'), and never a '.' / '..'
+// segment (raw or percent-encoded) that could climb out of the shell's mount
+// prefix. Query strings and fragments are allowed.
+export function isSameOriginLaunchPath(value: string): boolean {
+  if (!value.startsWith('/') || value.startsWith('//')) return false;
+  if (/[\\\s\u0000-\u001f\u007f]/.test(value)) return false;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return false;
+  }
+  if (decoded.startsWith('//') || /[\\\s\u0000-\u001f\u007f]/.test(decoded)) return false;
+  const pathname = decoded.split(/[?#]/, 1)[0] ?? '';
+  return !pathname.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+// `od.launch` turns a plugin into a launcher: its only action opens `path`
+// (same-origin, new tab) instead of applying prompts or skills.
+export const PluginLaunchSchema = z.object({
+  path: z.string().min(1).refine(isSameOriginLaunchPath, {
+    message: "launch.path must be a same-origin path starting with '/' (no '//', scheme, backslash or '..').",
+  }),
+}).passthrough();
+
+export type PluginLaunch = z.infer<typeof PluginLaunchSchema>;
+
 export const PluginManifestSchema = z.object({
   $schema:     z.string().optional(),
   specVersion: OpenDesignSpecVersionSchema.optional(),
@@ -211,7 +240,22 @@ export const PluginManifestSchema = z.object({
     }).passthrough().optional(),
     inputs: z.array(InputFieldSchema).optional(),
     capabilities: z.array(z.string()).optional(),
+    launch: PluginLaunchSchema.optional(),
   }).passthrough().optional(),
 }).passthrough();
 
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
+
+// The same-origin path a built-in launcher plugin opens, or null when the
+// plugin is not one. Only bundled plugins (shipped in the image) are honoured
+// as launchers; the path is re-checked because records are read back from the
+// database as plain JSON.
+export function builtInLaunchPath(plugin: {
+  sourceKind?: unknown;
+  manifest?: unknown;
+}): string | null {
+  if (plugin.sourceKind !== 'bundled') return null;
+  const manifest = plugin.manifest as PluginManifest | null | undefined;
+  const path: unknown = manifest?.od?.launch?.path;
+  return typeof path === 'string' && isSameOriginLaunchPath(path) ? path : null;
+}

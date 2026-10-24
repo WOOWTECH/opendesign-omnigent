@@ -1,0 +1,32 @@
+{
+  "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
+  "name": "woow-mcp-server",
+  "title": "MCP Server",
+  "title_i18n": {
+    "en": "MCP Server",
+    "zh-CN": "MCP Server",
+    "zh-TW": "MCP Server"
+  },
+  "version": "0.1.0",
+  "description": "Manage the built-in MCP server's keys, tools and Claude.ai connection URL.",
+  "description_i18n": {
+    "en": "Manage the built-in MCP server's keys, tools and Claude.ai connection URL.",
+    "zh-CN": "管理内置 MCP 服务器的密钥、工具与 Claude.ai 连接网址。",
+    "zh-TW": "管理內建 MCP 伺服器的金鑰、工具與 Claude.ai 連線網址。"
+  },
+  "license": "Apache-2.0",
+  "author": {
+    "name": "WoowTech"
+  },
+  "tags": [
+    "woow",
+    "built-in",
+    "launcher"
+  ],
+  "od": {
+    "launch": {
+      "path": "/mcp-admin/"
+    }
+  }
+}

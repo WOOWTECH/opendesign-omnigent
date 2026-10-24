@@ -29,6 +29,7 @@ import {
   composeOdNextStrategyStableRequestContextV2,
   executionProfileFromStreamFormat,
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
+  builtInLaunchPath,
   renderChatTurnHostProtocolInstructions,
   resolveOdNextDeckFrameworkMode,
 } from '@open-design/contracts';
@@ -3637,7 +3638,9 @@ export async function startServer({
         entryNamePrefix:     'open-design',
       },
     });
-    bundledMarketplaceEntries = result.registered.map((plugin) => ({
+    // Built-in launchers (od.launch) are shell entry points, not catalog
+    // content; they stay installed but out of the official registry listing.
+    bundledMarketplaceEntries = result.registered.filter((plugin) => builtInLaunchPath(plugin) === null).map((plugin) => ({
       name:        `open-design/${plugin.id}`,
       title:       plugin.title,
       title_i18n:  plugin.manifest.title_i18n,

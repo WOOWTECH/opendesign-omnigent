@@ -12,6 +12,7 @@ import { BackoffController, type BackoffOptions } from '../lib/backoff';
 import { markProjectCreatedByViewer } from '../collab/useProjectCollab';
 import {
   API_ERROR_CODES,
+  builtInLaunchPath,
   isSameWorkspacePrincipal,
   type ApiErrorCode,
 } from '@open-design/contracts';
@@ -2027,9 +2028,12 @@ export function resetPluginsCache(): void {
   pluginCatalogCacheGenerations.clear();
 }
 
+// Built-in launchers (`od.launch`) only open a page, so they stay out of every
+// apply/use surface (composer, home gallery, rails); the Plugins page reads
+// them from the `includeHidden` catalogue instead.
 export function isVisiblePlugin(plugin: InstalledPluginRecord): boolean {
   const od = (plugin.manifest?.od ?? {}) as Record<string, unknown>;
-  return od.hidden !== true;
+  return od.hidden !== true && builtInLaunchPath(plugin) === null;
 }
 
 export async function duplicatePluginAsProject(

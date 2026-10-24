@@ -1420,6 +1420,8 @@ export const zhTW: Dict = {
   "pluginsView.emptyOfficialSkillsTitle": "No official skills available",
   "pluginsView.emptyOfficialHint": "Check back later, or add a marketplace in plugin sources.",
   "pluginsView.teamSharedBadge": "Shared with team",
+  "pluginsView.builtInBadge": "內建",
+  "pluginsView.open": "開啟",
   "pluginsView.tryIt": "試試看",
   "pluginsView.categoriesAria": "Categories",
   "pluginsView.statSkills": "{count} skills",

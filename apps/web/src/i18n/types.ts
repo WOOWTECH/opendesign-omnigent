@@ -1768,6 +1768,8 @@ export interface Dict {
   'pluginsView.emptyOfficialSkillsTitle': string;
   'pluginsView.emptyOfficialHint': string;
   'pluginsView.teamSharedBadge': string;
+  'pluginsView.builtInBadge': string;
+  'pluginsView.open': string;
   'pluginsView.tryIt': string;
   'pluginsView.categoriesAria': string;
   'pluginsView.statSkills': string;

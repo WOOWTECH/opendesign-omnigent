@@ -1418,6 +1418,8 @@ export const zhCN: Dict = {
   "pluginsView.emptyOfficialSkillsTitle": "暂无可用的官方技能",
   "pluginsView.emptyOfficialHint": "稍后再来看看，或在插件来源中添加一个市场。",
   "pluginsView.teamSharedBadge": "团队共享",
+  "pluginsView.builtInBadge": "内置",
+  "pluginsView.open": "打开",
   "pluginsView.tryIt": "试试看",
   "pluginsView.categoriesAria": "分类",
   "pluginsView.statSkills": "{count} 个技能",
