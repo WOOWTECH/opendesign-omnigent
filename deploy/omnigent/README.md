@@ -9,6 +9,8 @@ that base. It also copies the precompiled Omnigent 0.16.0 SDK from the fixed
 `20261005.1409` image digest. Only `/opt/omnigent` and the hash-listed re2,
 abseil and ICU runtime closure are copied. Existing system libraries must
 match byte for byte; a conflict fails the build. No agent engine is copied.
+The SDK is copied in layers capped at 64 MiB before compression, avoiding the
+registry's Cloudflare 413 limit observed with a single SDK layer.
 
 The daemon owns private SDK installation, hash-verified SDK patching and the
 private host supervisor. The PaaS Alpine image reuses the precompiled SDK;

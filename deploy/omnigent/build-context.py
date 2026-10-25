@@ -111,7 +111,7 @@ def main():
         raise ValueError('Dockerfile must inherit the pinned complete PaaS image.')
     entries['Dockerfile'] = dockerfile
     modes['Dockerfile'] = 0o644
-    for name in ('manifest.json', 'materialize.py'):
+    for name in ('manifest.json', 'materialize.py', 'split-sdk.py'):
         entries['sdk-runtime/' + name] = (root / 'deploy/omnigent/sdk-runtime' / name).read_bytes()
         modes['sdk-runtime/' + name] = 0o644
     sdk_runtime = json.loads(entries['sdk-runtime/manifest.json'])

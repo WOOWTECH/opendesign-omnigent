@@ -27,6 +27,7 @@ describe('Omnigent native service', () => {
     const state = '/fixture/integrations/omnigent';
     const managed = path.join(state, 'deps/uv/tools/omnigent/bin/python');
     expect(omnigentPython(state, {}, p => p === managed)).toBe(managed);
+    expect(omnigentPython(state, {}, () => true)).toBe('/opt/omnigent/venv/bin/python');
     expect(omnigentPython(state, { OD_OMNIGENT_PYTHON: '/explicit/python' }, () => true)).toBe('/explicit/python');
     expect(omnigentPython(state, {}, p => p === '/opt/omnigent/venv/bin/python')).toBe('/opt/omnigent/venv/bin/python');
     expect(omnigentPython(state, {}, () => false)).toBe('python3');

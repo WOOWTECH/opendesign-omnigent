@@ -1,14 +1,22 @@
 FROM jcr-prod.woowtech.io/woow-paas-docker-local/open-design:20261005.1409@sha256:0c257c7715f87c293744252aeb905d66dca87355b93c3293fde52bc2db586c7c AS sdk
 USER root
 COPY sdk-runtime/ /tmp/sdk-runtime/
-RUN python3 -B /tmp/sdk-runtime/materialize.py collect /tmp/sdk-runtime/manifest.json /opt/omnigent-runtime
+RUN python3 -B /tmp/sdk-runtime/materialize.py collect /tmp/sdk-runtime/manifest.json /opt/omnigent-runtime \
+ && python3 -B /tmp/sdk-runtime/split-sdk.py
 
 FROM jcr-prod.woowtech.io/woow-paas-docker-local/open-design:20261024.0943@sha256:5252ac5b3d97b094f3093619ac7eab8003455c817687f9d474f3bf9e26f9e5ce
 ARG SOURCE_REVISION
 # SHA-256 of manifest.json (the archive checksum is recorded separately).
 ARG ARTIFACT_SHA256
 USER root
-COPY --from=sdk /opt/omnigent/ /opt/omnigent/
+COPY --from=sdk /opt/omnigent-layers/0/ /
+COPY --from=sdk /opt/omnigent-layers/1/ /
+COPY --from=sdk /opt/omnigent-layers/2/ /
+COPY --from=sdk /opt/omnigent-layers/3/ /
+COPY --from=sdk /opt/omnigent-layers/4/ /
+COPY --from=sdk /opt/omnigent-layers/5/ /
+COPY --from=sdk /opt/omnigent-layers/6/ /
+COPY --from=sdk /opt/omnigent-layers/7/ /
 COPY --from=sdk /opt/omnigent-runtime/ /tmp/omnigent-runtime/
 COPY sdk-runtime/ /tmp/sdk-runtime/
 RUN python3 -B /tmp/sdk-runtime/materialize.py install /tmp/sdk-runtime/manifest.json /tmp/omnigent-runtime \

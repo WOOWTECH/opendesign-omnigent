@@ -71,8 +71,8 @@ export function normalizeOmnigentServer(input: unknown): string {
 function empty(): State { return { schema: 1, enabled: true, phase: 'needs-login', server: null, loginConfirmed: false, verification: {}, onboarding: {} }; }
 export function omnigentPython(stateDir: string, env: NodeJS.ProcessEnv, exists = existsSync): string {
   const managed = path.join(stateDir, 'deps', 'uv', 'tools', 'omnigent', 'bin', 'python');
-  return env.OD_OMNIGENT_PYTHON ?? (exists(managed) ? managed
-    : exists('/opt/omnigent/venv/bin/python') ? '/opt/omnigent/venv/bin/python' : 'python3');
+  return env.OD_OMNIGENT_PYTHON ?? (exists('/opt/omnigent/venv/bin/python') ? '/opt/omnigent/venv/bin/python'
+    : exists(managed) ? managed : 'python3');
 }
 export class OmnigentIntegrationService {
   private readonly stateDir: string;
