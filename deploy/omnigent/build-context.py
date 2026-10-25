@@ -113,12 +113,13 @@ def main():
     overlay = json.loads((root / 'deploy/omnigent/base-overlay.json').read_text())
     if overlay['baseImage'] != BASE_IMAGE:
         raise ValueError('Overlay contract must match the pinned current base.')
-    # These base-owned MCP units must not silently hide a future source edit.
+    # Base-owned MCP and branding units must not hide a future source edit.
+    protected_sources = ['apps/daemon/src/' + name.removesuffix('.js') + '.ts'
+                         for name in overlay['baseDaemonOverrides']]
     changed = git('diff', '--name-only', 'f95a85bcd534c3b981b0a9a494b0c92f9dca480d', revision,
-                  '--', 'apps/daemon/src/mcp-config.ts', 'apps/daemon/src/mcp-routes.ts',
-                  'apps/daemon/src/routes/mcp-servers.ts')
+                  '--', *protected_sources)
     if changed:
-        raise ValueError('MCP source changed; integrate the base overrides before packaging.')
+        raise ValueError('Protected source changed; integrate the base overrides before packaging.')
     for name in ('base-overlay.json', 'verify-overlay.py'):
         entries[name] = (root / 'deploy/omnigent' / name).read_bytes()
         modes[name] = 0o644

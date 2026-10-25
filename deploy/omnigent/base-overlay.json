@@ -3,7 +3,8 @@
   "baseDaemonOverrides": {
     "mcp-config.js": "86a74f5b963e375f297025ff3256a4f14ac1b693240bac2a68d7cfddb7d13c24",
     "mcp-routes.js": "7353fb9667d246abfc74356c89969179ac9735d530890109ff053096d4e0cea8",
-    "routes/mcp-servers.js": "cb5a0dcf10cc85274e93a25247a07bb83fc55c00ee87d02154004c9a1882ee55"
+    "routes/mcp-servers.js": "cb5a0dcf10cc85274e93a25247a07bb83fc55c00ee87d02154004c9a1882ee55",
+    "routes/project/index.js": "7b0cf83d1d414568a0ec8bcd2c6f15676037bb15e1c2adbbadb9253b9b3564e6"
   },
   "daemonOverlayFiles": [
     "integrations/omnigent/adapter.py"

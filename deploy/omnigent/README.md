@@ -11,7 +11,7 @@ Image file hashes showed the same web output and three native MCP daemon
 additions/updates, plus the Paseo launcher. Preserve that complete image and
 replace only the reviewed Omnigent adapter, rebuilt web output and Omnigent
 manifest. `verify-overlay.py` checks every unchanged compiled daemon file and
-the exact base MCP hashes. A future additional backend change fails the build
+the exact base MCP hashes and the inherited snapshot-image route patch. A future additional backend change fails the build
 until the overlay contract is deliberately extended. The packager also refuses
 source edits to the base-owned MCP units that this release preserves.
 
