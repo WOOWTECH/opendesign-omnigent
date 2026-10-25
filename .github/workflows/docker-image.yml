@@ -37,6 +37,9 @@ on:
 
 jobs:
   build-and-push:
+    # This fork uses version tags for the Omnigent plugin, not the shared OD image.
+    # Keep explicit/manual builds and PR smoke builds available.
+    if: github.repository != 'WOOWTECH/opendesign-omnigent' || github.event_name != 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
