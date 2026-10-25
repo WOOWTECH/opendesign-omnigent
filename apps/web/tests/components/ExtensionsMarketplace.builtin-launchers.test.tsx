@@ -60,6 +60,7 @@ function record(input: {
 }
 
 const MCP = record({ id: 'woow-mcp-server', sourceKind: 'bundled', title: 'MCP Server', launch: '/mcp-admin/' });
+const PASEO = record({ id: 'woow-paseo', sourceKind: 'bundled', title: 'Paseo', launch: '/paseo/setup/' });
 const CLI = record({
   id: 'woow-cli-terminal',
   sourceKind: 'bundled',
@@ -77,7 +78,8 @@ const OMNIGENT = InstalledPluginRecordSchema.parse({
   ...record({ id: omnigentManifest.name, sourceKind: 'bundled', title: omnigentManifest.title }),
   manifest: omnigentManifest,
 });
-const PLUGINS = [MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI, OMNIGENT];
+const LAUNCHERS = [CLI, MCP, OMNIGENT, PASEO];
+const PLUGINS = [MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI, OMNIGENT, PASEO];
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -91,7 +93,8 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/plugins');
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === `/api/plugins/${CLI.id}`) return jsonResponse(CLI);
+    const plugin = LAUNCHERS.find(({ id }) => url === `/api/plugins/${id}`);
+    if (plugin) return jsonResponse(plugin);
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: PLUGINS });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [] });
     if (url === '/api/skills') return jsonResponse({ skills: [] });
@@ -113,7 +116,7 @@ async function renderInstalledTab(locale: Locale = 'en', onUsePlugin = vi.fn()) 
   );
   fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
   await waitFor(() => {
-    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(4);
+    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(5);
   });
   return utils;
 }
@@ -131,10 +134,11 @@ describe('built-in launcher plugins on the Plugins page', () => {
       </I18nProvider>,
     );
     await waitFor(() => {
-      expect(cardIds(container).slice(0, 3)).toEqual([
+      expect(cardIds(container).slice(0, 4)).toEqual([
         'plugins-card-woow-cli-terminal',
         'plugins-card-woow-mcp-server',
         'plugins-card-woow-omnigent',
+        'plugins-card-woow-paseo',
       ]);
     });
     expect(screen.getByTestId('plugins-card-open-woow-cli-terminal').getAttribute('href')).toBe('/console/');
@@ -148,6 +152,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
       'plugins-card-woow-cli-terminal',
       'plugins-card-woow-mcp-server',
       'plugins-card-woow-omnigent',
+      'plugins-card-woow-paseo',
       'plugins-card-my-plugin',
     ]);
     expect(screen.getByTestId('plugins-card-builtin-woow-mcp-server').textContent).toBe('Built-in');
@@ -157,7 +162,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
   it('opens the launch path in a new tab through a plain anchor and offers no uninstall', async () => {
     const onUsePlugin = vi.fn();
     await renderInstalledTab('en', onUsePlugin);
-    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-omnigent', '/settings/omnigent']]) {
+    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-omnigent', '/settings/omnigent'], ['woow-paseo', '/paseo/setup/']]) {
       const open = screen.getByTestId(`plugins-card-open-${id}`);
       expect(open.tagName).toBe('A');
       expect(open.getAttribute('href')).toBe(href);
@@ -196,15 +201,15 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(screen.getByTestId('plugins-card-open-woow-cli-terminal').textContent).toBe('開啟');
   });
 
-  it('gives the launcher detail page an Open link instead of Use', async () => {
+  it.each(LAUNCHERS)('gives $id details an Open link instead of Use', async (plugin) => {
     render(
       <I18nProvider initial="zh-TW">
-        <PluginDetailView pluginId={CLI.id} />
+        <PluginDetailView pluginId={plugin.id} />
       </I18nProvider>,
     );
     const open = await screen.findByTestId('plugin-detail-open');
     expect(open.tagName).toBe('A');
-    expect(open.getAttribute('href')).toBe('/console/');
+    expect(open.getAttribute('href')).toBe(plugin.manifest.od?.launch?.path);
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('rel')).toBe('noopener noreferrer');
     expect(open.textContent).toBe('開啟');
@@ -219,6 +224,7 @@ describe('launchers stay out of apply/use catalogues', () => {
     expect(isVisiblePlugin(MCP)).toBe(false);
     expect(isVisiblePlugin(CLI)).toBe(false);
     expect(isVisiblePlugin(OMNIGENT)).toBe(false);
+    expect(isVisiblePlugin(PASEO)).toBe(false);
     expect(isVisiblePlugin(BUNDLED_PLUGIN)).toBe(true);
     expect(isVisiblePlugin(USER_WITH_LAUNCH)).toBe(true);
 
