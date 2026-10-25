@@ -47,6 +47,38 @@ describe('Omnigent native service', () => {
     await restarted.status('local', true);
     expect(f.adapter).not.toHaveBeenCalled();
   });
+  it('resumes an approved local host at daemon startup without a browser request', async () => {
+    const f = await fixture('bundled');
+    await f.setup(); f.adapter.mockClear(); f.onboarding.mockClear();
+    const restarted = new OmnigentIntegrationService(f.options);
+    await restarted.resumeLocalHost();
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['catalog']);
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ allowManagedHost: true });
+    expect(f.onboarding).not.toHaveBeenCalled();
+  });
+  it.each(['fresh', 'disabled', 'disconnected', 'other-scope'] as const)(
+    'does not resume a %s host at daemon startup', async mode => {
+      const f = await fixture('bundled');
+      if (mode === 'other-scope') {
+        await f.service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' }, 'workspace:member');
+        await f.service.waitForIdle();
+      } else if (mode !== 'fresh') {
+        await f.setup();
+        await f.service.action({ action: mode === 'disabled' ? 'disable' : 'disconnect' });
+        await f.service.waitForIdle();
+      }
+      f.adapter.mockClear();
+      await new OmnigentIntegrationService(f.options).resumeLocalHost();
+      expect(f.adapter).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['removed', 'reinstalled'] as const)('rechecks a %s plugin before resuming its host', async mode => {
+    const f = await fixture('bundled'); await f.setup();
+    f.setPlugin(mode === 'removed' ? null : { id: 'woow-omnigent', installedAt: 2, sourceKind: 'bundled' });
+    f.adapter.mockClear();
+    await new OmnigentIntegrationService(f.options).resumeLocalHost();
+    expect(f.adapter.mock.calls.every(([input]) => input.allowManagedHost !== true)).toBe(true);
+  });
   it.each(['https://u:p@omni.example', 'http://remote.example', 'https://omni.example?q=password', 'https://omni.example/#secret', 'file:///tmp/omni', 'https://omni.example\\evil'])('rejects credential-bearing or unsafe server %s', value => expect(() => normalizeOmnigentServer(value)).toThrow());
   it('normalizes the selected server', () => expect(normalizeOmnigentServer(' https://OMNI.example/ ')).toBe('https://omni.example'));
   it('starts without inheriting approval and checks only local inventory', async () => {

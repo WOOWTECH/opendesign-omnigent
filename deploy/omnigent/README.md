@@ -54,20 +54,20 @@ patch contract and host-kit asset names. `ARTIFACT_SHA256` means the checksum of
 
 ## Candidate build and publish, without the global pipeline
 
-Read-only inspection on 2026-10-25 confirmed:
+Build and deployment work on 2026-10-25 confirmed:
 
 - `gitea/act-runner-runner-0`, container `dind`: Docker 28.5.2, linux/amd64,
   buildx 0.29.1. The sibling runner also has Docker 28.5.2.
 - `/tmp/od-omnigent-build-auth/config.json` exists in the first runner's dind
-  container. Only existence was inspected; authentication and registry writes
-  have not been attempted in this change.
+  container. The authorized candidate build and push succeeded using that
+  existing credential. Its contents are not copied into the build context.
 - The historical local reference
   `/data/pi-agent/home/work/od-omnigent-team/private/build-candidate.py` uses this
   Docker socket via `kubectl exec`; it does not use Kaniko. Do not run that script
   unchanged: it packages another checkout, assumes the old SDK image path and
   immediately builds/pushes.
 
-The commands below are prepared for the release owner. They build and push only
+The commands below reproduce the release build. They build and push only
 a unique candidate tag. They do not dispatch the paired core/PaaS workflow,
 promote `latest`, change platform templates or update a workload. Do not print or
 copy the runner's auth file. If its existing auth has expired, stop and use the
@@ -102,16 +102,23 @@ for registry inspection with an already authorized login, but is not an image
 builder. No standalone Kaniko/BuildKit service was found; the existing dind
 builder is the confirmed path.
 
-The main release owner handles the service244 image-only desired-state update
-and verification through the existing Odoo controller/operator path. The
-service244 snapshot at revision 27 is the rollback reference. This packaging
-change does not edit Helm values, charts, templates or running services.
+The service244 image-only desired-state update uses the existing Odoo
+controller/operator path. The pre-change snapshot at revision 27 is the rollback
+reference. The packaging commands themselves do not update a workload or a
+platform template. A normal restart preserves the configured image; the PaaS
+Redeploy action may reapply a template image, so check the desired image before
+using that separate action.
 
-## Remaining release gates
+## Verification steps
 
 - Build final daemon assets after the private supervisor and SDK changes land.
 - Verify SDK reuse in a fresh Alpine container, then host lifecycle,
   GUI connection and model conversations. A successful image build verifies
   imports and native CLI resolution; it does not prove server login or replies.
-- Build/push the candidate and retain its immutable digest. No image build,
-  registry push or deployment was performed while preparing these files.
+- Build/push the candidate and retain its immutable digest.
+- In the actual tenant, test the native launcher, fresh connection form,
+  disconnect, disable, re-enable and restart persistence. Check the original
+  MCP Server and CLI Terminal launchers as well.
+- Missing provider credentials are an incomplete conversation acceptance,
+  even if the host is online. Record each engine separately and only report
+  Ready after its real reply and test-session cleanup pass.

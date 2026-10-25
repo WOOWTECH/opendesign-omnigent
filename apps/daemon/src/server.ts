@@ -9710,6 +9710,9 @@ export async function startServer({
     getPlugin: (scope) => getOmnigentPlugin(omnigentOnboarding.context(scope)),
     createOnboarding: omnigentOnboarding.create,
   });
+  void omnigentService.resumeLocalHost().catch(() => {
+    console.warn('[omnigent] Automatic connection restore failed; open Omnigent settings to retry.');
+  });
   registerOmnigentRoutes(app, {
     service: omnigentService,
     origin: { resolvedPortRef },

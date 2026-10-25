@@ -121,6 +121,17 @@ export class OmnigentIntegrationService {
     })();
     try { await this.initialization; } finally { this.initialization = undefined; }
   }
+  /** Restore a confirmed local connection without waiting for a browser.
+   * Workspace scopes still require their native request authority to be loaded;
+   * a persisted scope string alone cannot recreate that authority at startup.
+   */
+  async resumeLocalHost(): Promise<void> {
+    await this.load();
+    if (!this.state.enabled || !this.state.loginConfirmed
+      || this.state.installationScope !== 'local' || this.state.approvalScope !== 'local') return;
+    // Reconcile the actual installation before allowing the adapter to resume.
+    await this.status('local', true);
+  }
   private async save(): Promise<void> {
     const contents = JSON.stringify(this.state, null, 2) + '\n';
     const next = this.writeChain.catch(() => undefined).then(async () => {

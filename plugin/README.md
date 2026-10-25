@@ -24,6 +24,11 @@ Requires the WoowTech OpenDesign Omnigent build. A stock OpenDesign plugin canno
 
 For an imported package, the setup conversation and private connection dialog open after installation. The integration downloads its private Omnigent dependencies when needed. Only agent engines already installed in the container are connected. The settings page shows model catalogs and verifies real assistant replies before reporting Ready. Each engine needs its own valid provider authentication; an Omnigent login does not supply it. Open Omnigent to start a conversation with the selected host, module and model.
 
+In local mode, an enabled connection that completed server login resumes when
+the daemon restarts. Workspace-scoped connections resume after a native
+workspace request re-establishes that workspace authority. New installations,
+disconnected connections and disabled integrations do not auto-connect.
+
 Passwords are transient. Official access and refresh tokens are stored by Omnigent in its own private configuration home. Setup credentials do not enter OpenDesign messages, GenUI answers or settings autosave.
 
 Use Disable to stop this integration's checks, Disconnect to remove its selected server login, and Enable to begin a fresh setup. Update refreshes the private integration runtime; replacing a built-in launcher requires an application update.
