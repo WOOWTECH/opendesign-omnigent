@@ -86,6 +86,7 @@ interface SdkPatchTarget { sdkRelativePath: string; baseSha256: string; replacem
 const PATCH_TARGETS: Record<string, string> = {
   'opencode-host-model-options.patch': 'host/connect.py',
   'opencode-quota-error.patch': 'harnesses/opencode_native/forwarder.py',
+  'opencode-native-interrupt.patch': 'runner/native/interrupt.py',
 };
 
 /** External SDKs are read-only; only the daemon's private install can be patched. */

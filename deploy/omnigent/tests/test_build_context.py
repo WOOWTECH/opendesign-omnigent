@@ -61,7 +61,8 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(manifest['baseImage'], PACKAGER.BASE_IMAGE)
             self.assertEqual(manifest['baseSourceRevision'], 'b3270069b93548bbfced8cb17fa90039fd88422a')
             self.assertIn('Inherited unchanged', manifest['webRuntime'])
-            self.assertEqual(len(manifest['sdkPatches']['patches']), 2)
+            self.assertEqual({entry['patch'] for entry in manifest['sdkPatches']['patches']},
+                             {'opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch'})
             for entry in manifest['sdkPatches']['patches']:
                 name = 'daemon-dist/integrations/omnigent/sdk-patches/' + entry['patch']
                 self.assertEqual(archive.extractfile(name).read(), (self.source / entry['patch']).read_bytes())
@@ -69,6 +70,20 @@ class DeliveryTests(unittest.TestCase):
     def test_missing_quota_patch_is_rejected(self):
         (self.sdk / 'opencode-quota-error.patch').unlink()
         with self.assertRaisesRegex(ValueError, 'Missing build asset'):
+            self.package(self.directory / 'context.tar.gz')
+
+    def test_missing_interrupt_patch_is_rejected(self):
+        (self.sdk / 'opencode-native-interrupt.patch').unlink()
+        with self.assertRaisesRegex(ValueError, 'Missing build asset'):
+            self.package(self.directory / 'context.tar.gz')
+
+    def test_omitted_interrupt_manifest_entry_is_rejected(self):
+        path = self.sdk / 'manifest.json'
+        manifest = json.loads(path.read_text())
+        manifest['patches'] = [entry for entry in manifest['patches']
+                               if entry['patch'] != 'opencode-native-interrupt.patch']
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'Unexpected SDK patch contract'):
             self.package(self.directory / 'context.tar.gz')
 
     def test_stale_canonical_applier_is_rejected(self):

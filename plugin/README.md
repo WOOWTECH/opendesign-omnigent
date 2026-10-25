@@ -41,11 +41,17 @@ as a quota error.
 
 The compatible v0.1.6 native host also displays a conversation notice when
 OpenCode retries an explicit provider `usage_limit_reached` or
-`insufficient_quota` error. Choose **Stop**, then select an available model for
-a new conversation or wait for that provider's quota to reset. Temporary rate
-limits retain OpenCode's normal retry behavior. This SDK behavior requires the
-matching native host build; importing the skill package alone does not replace
-an existing host's Python SDK.
+`insufficient_quota` error. The matching host build also wires **Interrupt / Stop**
+to OpenCode's native session abort, so stopping must end the backend retry, not
+just clear the UI's busy indicator. Confirm the session has stopped before
+selecting an available model for a new conversation, or wait for that provider's
+quota to reset. Temporary rate limits retain OpenCode's normal retry behavior
+until the user interrupts. This requires the matching native host SDK patch set;
+importing the skill package alone does not replace an existing host's Python SDK.
+
+The v0.1.6 candidate remains under acceptance: quota visibility and a successful
+model reply alone do not prove that Interrupt stops the backend. The final
+release receipt must cover native abort and a subsequent model conversation.
 
 In local mode, an enabled connection that completed server login resumes when
 the daemon restarts. Workspace-scoped connections resume after a native

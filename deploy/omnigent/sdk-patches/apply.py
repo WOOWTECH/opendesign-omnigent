@@ -13,6 +13,7 @@ SDK_VERSION = "0.16.0"
 PATCH_TARGETS = {
     "opencode-host-model-options.patch": "host/connect.py",
     "opencode-quota-error.patch": "harnesses/opencode_native/forwarder.py",
+    "opencode-native-interrupt.patch": "runner/native/interrupt.py",
 }
 HASH = re.compile(r"[a-f0-9]{64}")
 HUNK = re.compile(rb"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:[^\n]*)\n")

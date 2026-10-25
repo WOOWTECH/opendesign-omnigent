@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 const execFileAsync = promisify(execFile);
 const daemonRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const canonical = path.resolve(daemonRoot, '../../deploy/omnigent/sdk-patches');
-const assetNames = ['apply.py', 'manifest.json', 'opencode-host-model-options.patch', 'opencode-quota-error.patch'];
+const assetNames = ['apply.py', 'manifest.json', 'opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch'];
 const hostKitCanonical = path.join(daemonRoot, 'src/integrations/omnigent/host-kit');
 const hostKitAssetNames = ['supervisor.sh', 'og_helper.py', 'manifest.json'];
 
@@ -48,7 +48,7 @@ describe('Omnigent build assets', () => {
     }
   });
 
-  it.each(['opencode-host-model-options.patch', 'opencode-quota-error.patch'])('fails the build when %s is missing', async name => {
+  it.each(['opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch'])('fails the build when %s is missing', async name => {
     await rm(path.join(patchSource, name));
     await expect(execFileAsync(process.execPath, [builder])).rejects.toMatchObject({ code: 1 });
   });

@@ -23,6 +23,17 @@
           "replacementSha256": "79813db586b43a28adf790f5ba26c1d1f04f782e09833298fcb2f5009da555b2"
         }
       ]
+    },
+    {
+      "patch": "opencode-native-interrupt.patch",
+      "patchSha256": "ac611bedf3413b4d9ffe6cdcbad336b948d2a8e096efe917f5b626f6e97a3803",
+      "files": [
+        {
+          "sdkRelativePath": "runner/native/interrupt.py",
+          "baseSha256": "315c16d408214372bd8f567274e1bdbf945e9d783ff9cc81456cfc37fc651aad",
+          "replacementSha256": "422350957c6164cddb8f4d16b7c79c09561eace9bc1f43f802b6f79bbb562cb7"
+        }
+      ]
     }
   ]
 }

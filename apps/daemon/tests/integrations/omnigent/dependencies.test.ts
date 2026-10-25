@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureOmnigentDependencies, type DependencyCommandRunner } from '../../../src/integrations/omnigent/dependencies.js';
 
-const patchFixture = vi.hoisted(() => ({ original: 'original SDK fixture\n', patched: 'patched SDK fixture\n', quotaOriginal: 'quota baseline fixture\n', quotaPatched: 'quota notice fixture\n', imageRoot: '' }));
+const patchFixture = vi.hoisted(() => ({ original: 'original SDK fixture\n', patched: 'patched SDK fixture\n', quotaOriginal: 'quota baseline fixture\n', quotaPatched: 'quota notice fixture\n', interruptOriginal: 'interrupt baseline fixture\n', interruptPatched: 'native abort fixture\n', imageRoot: '' }));
 // The production image path is simulated so these tests also run on developer machines without that image.
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>();
@@ -21,8 +21,9 @@ vi.mock('node:fs/promises', async importOriginal => {
       const manifest = JSON.parse(String(contents));
       for (const entry of manifest.patches) {
         const quota = entry.patch === 'opencode-quota-error.patch';
-        entry.files[0].baseSha256 = createHash('sha256').update(quota ? patchFixture.quotaOriginal : patchFixture.original).digest('hex');
-        entry.files[0].replacementSha256 = createHash('sha256').update(quota ? patchFixture.quotaPatched : patchFixture.patched).digest('hex');
+        const interrupt = entry.patch === 'opencode-native-interrupt.patch';
+        entry.files[0].baseSha256 = createHash('sha256').update(quota ? patchFixture.quotaOriginal : interrupt ? patchFixture.interruptOriginal : patchFixture.original).digest('hex');
+        entry.files[0].replacementSha256 = createHash('sha256').update(quota ? patchFixture.quotaPatched : interrupt ? patchFixture.interruptPatched : patchFixture.patched).digest('hex');
       }
       const result = JSON.stringify(manifest);
       return typeof contents === 'string' ? result : Buffer.from(result);
@@ -39,12 +40,14 @@ describe('private Omnigent dependencies', () => {
   let sdkPackage: string;
   let sdkTarget: string;
   let quotaTarget: string;
+  let interruptTarget: string;
   let imagePackage: string;
   let externalPackages: Map<string, string>;
   const seedSdk = async (sdkPackage: string, patched: boolean) => {
     for (const [relative, contents] of [
       ['host/connect.py', patched ? patchFixture.patched : patchFixture.original],
       ['harnesses/opencode_native/forwarder.py', patched ? patchFixture.quotaPatched : patchFixture.quotaOriginal],
+      ['runner/native/interrupt.py', patched ? patchFixture.interruptPatched : patchFixture.interruptOriginal],
     ]) {
       const target = path.join(sdkPackage, relative!);
       await mkdir(path.dirname(target), { recursive: true });
@@ -67,6 +70,7 @@ describe('private Omnigent dependencies', () => {
     sdkPackage = path.join(sdkRoot, 'lib', 'python3.12', 'site-packages', 'omnigent');
     sdkTarget = path.join(sdkPackage, 'host', 'connect.py');
     quotaTarget = path.join(sdkPackage, 'harnesses/opencode_native/forwarder.py');
+    interruptTarget = path.join(sdkPackage, 'runner/native/interrupt.py');
     patchFixture.imageRoot = path.join(root, 'image-sdk');
     imagePackage = path.join(patchFixture.imageRoot, 'lib/python3.12/site-packages/omnigent');
     await seedSdk(imagePackage, true);
@@ -79,6 +83,7 @@ describe('private Omnigent dependencies', () => {
       if (args.some(arg => arg.endsWith('/sdk-patches/apply.py'))) {
         await writeFile(sdkTarget, patchFixture.patched);
         await writeFile(quotaTarget, patchFixture.quotaPatched);
+        await writeFile(interruptTarget, patchFixture.interruptPatched);
         return { code: 0, stdout: 'SDK_PATCH_APPLIED\n' };
       }
       if (args[0] === '--version') return { code: 0, stdout: 'uv 0.12.10\n' };
@@ -92,7 +97,7 @@ describe('private Omnigent dependencies', () => {
   });
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-  it('reuses the image SDK only after verifying both patched files without installing anything', async () => {
+  it('reuses the image SDK only after verifying all three patched files without installing anything', async () => {
     installed.add(imagePython);
     const result = await ensureOmnigentDependencies({ stateDir, env, run });
     expect(result.python).toBe(imagePython);
@@ -160,6 +165,40 @@ describe('private Omnigent dependencies', () => {
     await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('patch verification failed');
     expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.original);
     expect(run.mock.calls.some(([, args]) => args.some(arg => arg.endsWith('/sdk-patches/apply.py')))).toBe(false);
+  });
+  it('uses a private SDK when the image has host and quota patches but lacks native interrupt', async () => {
+    installed.add(imagePython);
+    const target = path.join(imagePackage, 'runner/native/interrupt.py');
+    await writeFile(target, patchFixture.interruptOriginal);
+    await executable(path.join(env.PATH!, 'uv'));
+    expect((await ensureOmnigentDependencies({ stateDir, env, run })).python).toBe(path.join(sdkRoot, 'bin/python'));
+    expect(await readFile(target, 'utf8')).toBe(patchFixture.interruptOriginal);
+    expect(run.mock.calls.some(([command, args]) => command === imagePython && !args.includes('-c'))).toBe(false);
+    expect(await readFile(interruptTarget, 'utf8')).toBe(patchFixture.interruptPatched);
+  });
+  it('rejects an unknown interrupt target before modifying either existing patch target', async () => {
+    installed.add(await executable(path.join(sdkRoot, 'bin/python')));
+    await seedSdk(sdkPackage, false);
+    await writeFile(interruptTarget, 'unknown interrupt source');
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('patch verification failed');
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.original);
+    expect(await readFile(quotaTarget, 'utf8')).toBe(patchFixture.quotaOriginal);
+    expect(run.mock.calls.some(([, args]) => args.some(arg => arg.endsWith('/sdk-patches/apply.py')))).toBe(false);
+  });
+  it('upgrades a private SDK with both old patches and then reuses all three without repatching', async () => {
+    const python = await executable(path.join(sdkRoot, 'bin/python'));
+    installed.add(python);
+    await seedSdk(sdkPackage, true);
+    await writeFile(interruptTarget, patchFixture.interruptOriginal);
+    expect((await ensureOmnigentDependencies({ stateDir, env, run })).python).toBe(python);
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.patched);
+    expect(await readFile(quotaTarget, 'utf8')).toBe(patchFixture.quotaPatched);
+    expect(await readFile(interruptTarget, 'utf8')).toBe(patchFixture.interruptPatched);
+    expect(run.mock.calls.some(([, args]) => args.some(arg => arg.endsWith('/sdk-patches/apply.py')))).toBe(true);
+    expect(run.mock.calls.some(([, args]) => args.includes('omnigent==0.16.0'))).toBe(false);
+    run.mockClear();
+    expect((await ensureOmnigentDependencies({ stateDir, env, run })).python).toBe(python);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
   });
   it('finishes a partial managed patch set while preserving the existing connect patch', async () => {
     installed.add(await executable(path.join(sdkRoot, 'bin/python')));

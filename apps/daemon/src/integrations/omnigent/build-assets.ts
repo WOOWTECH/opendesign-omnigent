@@ -11,7 +11,7 @@ await copyFile(path.join(source, 'adapter.py'), path.join(destination, 'adapter.
 const patchSource = path.resolve(source, '../../../../../deploy/omnigent/sdk-patches');
 const patchDestination = path.join(destination, 'sdk-patches');
 await mkdir(patchDestination, { recursive: true });
-for (const name of ['apply.py', 'manifest.json', 'opencode-host-model-options.patch', 'opencode-quota-error.patch']) {
+for (const name of ['apply.py', 'manifest.json', 'opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch']) {
   await copyFile(path.join(patchSource, name), path.join(patchDestination, name));
 }
 

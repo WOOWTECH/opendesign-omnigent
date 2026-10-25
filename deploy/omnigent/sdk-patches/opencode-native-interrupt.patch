@@ -1,0 +1,186 @@
+--- a/omnigent/runner/native/interrupt.py
++++ b/omnigent/runner/native/interrupt.py
+@@ -19,11 +19,9 @@
+ (so nine interrupt handlers total); claude stop is likewise special-cased and
+ codex/pi alias stop to their interrupt handler (so seven stop handlers total).
+ 
+-Coverage note: antigravity-native and opencode-native have no handler here and
+-:meth:`interrupt` / :meth:`stop` return ``None`` for them, so the caller falls
+-through to the in-process turn cancel — unchanged from before this seam. Wiring
+-their native interrupt (agy ``interrupt_turn`` / opencode ``client.abort``) is a
+-deferred follow-up.
++OpenCode interrupt/stop aborts the resident server and confirms its idle state
++before persisting the terminal edge. Antigravity still falls through to the
++in-process turn cancellation.
+ """
+ 
+ from __future__ import annotations
+@@ -31,10 +29,12 @@
+ import asyncio
+ import contextlib
+ import importlib
++import ipaddress
+ import logging
+ from collections.abc import Callable, Mapping
+ from dataclasses import dataclass
+ from typing import TYPE_CHECKING, Protocol
++from urllib.parse import quote, urlsplit
+ 
+ import httpx
+ from fastapi.responses import JSONResponse, Response
+@@ -293,8 +293,8 @@
+     wrapper label:
+ 
+     * ``"stop"`` — Claude's dedicated stop, or a key in :data:`_UNIFORM_STOP`
+-    * ``"best_effort"`` — remaining native agents (Codex/Pi alias stop to
+-      interrupt; Antigravity/OpenCode have no stop handler)
++    * ``"best_effort"`` — remaining native agents (Codex/Pi/OpenCode alias stop
++      to interrupt; Antigravity has no stop handler)
+     * ``"inprocess"`` — no native agent for this label
+ 
+     :param wrapper_label: The work entry's ``omnigent.wrapper`` value.
+@@ -306,6 +306,10 @@
+     if agent.key == "claude" or agent.key in _UNIFORM_STOP:
+         return "stop"
+     return "best_effort"
++
++
++_OPENCODE_INTERRUPT_TIMEOUT_S = 8.0
++_OPENCODE_INTERRUPT_POLL_S = 0.1
+ 
+ 
+ class NativeInterruptRunner:
+@@ -337,7 +341,7 @@
+ 
+         :returns: A response when this harness has an interrupt handler, else
+             ``None`` so the caller falls through to the in-process turn cancel
+-            (antigravity/opencode).
++            (antigravity).
+         """
+         agent = native_coding_agent_for_harness(harness_name)
+         if agent is None:
+@@ -347,6 +351,8 @@
+             return await self._claude_interrupt(conv_id)
+         if key == "codex":
+             return await self._codex_interrupt(conv_id)
++        if key == "opencode":
++            return await self._opencode_interrupt(conv_id)
+         spec = _UNIFORM_INTERRUPT.get(key)
+         if spec is None:
+             return None
+@@ -367,7 +373,7 @@
+         key = agent.key
+         if key == "claude":
+             return await self._claude_stop(conv_id)
+-        if key in ("codex", "pi"):
++        if key in ("codex", "pi", "opencode"):
+             return await self.interrupt(harness_name, conv_id)
+         spec = _UNIFORM_STOP.get(key)
+         if spec is None:
+@@ -553,6 +559,106 @@
+                 "not confirmed; session=%s reason=%s",
+                 conv_id,
+                 delivery_ack.reason,
++            )
++        return Response(status_code=204)
++
++    async def _opencode_interrupt(self, conv_id: str) -> Response:
++        """Abort only the owned native session; persist idle after confirmation.
++
++        An abort acknowledgement is not an idle edge. Poll the native status
++        map (idle sessions may be absent), failing closed on timeout or bad data.
++        """
++        from omnigent.harnesses.opencode_native.bridge import (
++            OPENCODE_NATIVE_BRIDGE_ID_LABEL_KEY,
++            bridge_dir_for_bridge_id,
++            read_bridge_state,
++        )
++        from omnigent.harnesses.opencode_native.client import OpenCodeClient
++
++        try:
++            async with asyncio.timeout(_OPENCODE_INTERRUPT_TIMEOUT_S):
++                labels = await _session_labels_for_runner_spawn(
++                    server_client=self._server_client, session_id=conv_id
++                )
++                bridge_id = labels.get(OPENCODE_NATIVE_BRIDGE_ID_LABEL_KEY) or conv_id
++                bridge_dir = bridge_dir_for_bridge_id(bridge_id)
++                state = read_bridge_state(bridge_dir)
++                if state is None or state.session_id != conv_id:
++                    raise ValueError("OpenCode bridge does not own this session")
++                url = urlsplit(state.server_base_url)
++                if (
++                    url.scheme != "http"
++                    or not url.hostname
++                    or not ipaddress.ip_address(url.hostname).is_loopback
++                    or url.username is not None
++                    or url.password is not None
++                    or url.path not in ("", "/")
++                    or url.query
++                    or url.fragment
++                ):
++                    raise ValueError("OpenCode bridge is not a loopback server")
++                native_id = state.opencode_session_id
++                if not native_id.startswith("ses_") or any(
++                    not (char.isascii() and (char.isalnum() or char in "_-")) for char in native_id
++                ):
++                    raise ValueError("Invalid OpenCode session id")
++                async with OpenCodeClient(
++                    state.server_base_url,
++                    headers=state.auth_headers(),
++                    directory=state.workspace,
++                ) as client:
++                    await client.abort(native_id)
++                    while True:
++                        statuses = await client._request_json("GET", "/session/status")
++                        if not isinstance(statuses, dict):
++                            raise ValueError("Invalid OpenCode status map")
++                        if native_id not in statuses:
++                            break
++                        status = statuses[native_id]
++                        if not isinstance(status, dict) or status.get("type") not in (
++                            "idle",
++                            "busy",
++                            "retry",
++                        ):
++                            raise ValueError("Invalid OpenCode session status")
++                        if status["type"] == "idle":
++                            break
++                        await asyncio.sleep(_OPENCODE_INTERRUPT_POLL_S)
++
++                # A bridge reassigned while awaiting HTTP must not settle its new turn.
++                current = read_bridge_state(bridge_dir)
++                if (
++                    current is None
++                    or current.session_id != conv_id
++                    or current.opencode_session_id != native_id
++                    or current.server_base_url != state.server_base_url
++                    or current.active_message_id not in (None, state.active_message_id)
++                ):
++                    raise ValueError("OpenCode bridge changed during interrupt")
++                response = await self._server_client.post(
++                    f"/v1/sessions/{quote(conv_id, safe='')}/events",
++                    json={
++                        "type": "external_session_status",
++                        "data": {
++                            "status": "idle",
++                            "turn_outcome": "cancelled",
++                            "response_id": state.active_message_id or native_id,
++                        },
++                    },
++                )
++                response.raise_for_status()
++        except Exception as exc:  # noqa: BLE001 - never fall through to local-only cancel.
++            self._logger.warning(
++                "OpenCode native interrupt unconfirmed; session=%s error=%s",
++                conv_id,
++                type(exc).__name__,
++            )
++            return JSONResponse(
++                status_code=503,
++                content={
++                    "error": "opencode_native_interrupt_unconfirmed",
++                    "detail": "Could not confirm OpenCode stopped. Retry Stop or stop the runner.",
++                },
+             )
+         return Response(status_code=204)
+ 

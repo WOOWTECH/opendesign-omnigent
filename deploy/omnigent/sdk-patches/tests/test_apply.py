@@ -36,7 +36,7 @@ class InstallerTests(unittest.TestCase):
         for name, relative in INSTALLER.PATCH_TARGETS.items():
             original = ''.join(f'line_{i} = {i}\n' for i in range(32)).encode()
             result = original
-            for i in ([2] if name.startswith('opencode-host') else [2, 10, 18, 26]):
+            for i in ([2, 10, 18, 26] if name == 'opencode-quota-error.patch' else [2]):
                 result = result.replace(f'line_{i} = {i}\n'.encode(), f'line_{i} = {i + 100}\n'.encode())
             delta = ''.join(difflib.unified_diff(original.decode().splitlines(True), result.decode().splitlines(True), fromfile='a/' + relative, tofile='b/' + relative, n=1)).encode()
             (self.assets / name).write_bytes(delta)
@@ -58,8 +58,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual((self.package / relative).read_bytes(), original)
         self.assertEqual(list(self.package.rglob('.sdk-patch-*')), [])
 
-    def test_two_patches_four_hunks_and_idempotent_reuse(self):
+    def test_three_patches_four_quota_hunks_and_idempotent_reuse(self):
         quota = self.assets / 'opencode-quota-error.patch'
+        self.assertEqual(len(self.manifest['patches']), 3)
         self.assertEqual(sum(line.startswith(b'@@ ') for line in quota.read_bytes().splitlines()), 4)
         self.apply()
         for relative, result in self.results.items():
@@ -83,6 +84,38 @@ class InstallerTests(unittest.TestCase):
         self.apply()
         self.assertEqual(first.stat().st_ino, before.st_ino)
         self.assertEqual((self.package / 'harnesses/opencode_native/forwarder.py').read_bytes(), self.results['harnesses/opencode_native/forwarder.py'])
+
+    def test_existing_host_and_quota_patches_gain_interrupt_without_rewriting_either(self):
+        previous = ['host/connect.py', 'harnesses/opencode_native/forwarder.py']
+        for relative in previous:
+            (self.package / relative).write_bytes(self.results[relative])
+        before = {relative: (self.package / relative).stat() for relative in previous}
+        with self.assertRaisesRegex(ValueError, 'BASELINE_MISMATCH'):
+            self.apply(check=True)
+        self.assertEqual((self.package / 'runner/native/interrupt.py').read_bytes(),
+                         self.originals['runner/native/interrupt.py'])
+        self.apply()
+        self.apply(check=True)
+        for relative, metadata in before.items():
+            after = (self.package / relative).stat()
+            self.assertEqual((after.st_ino, after.st_mtime_ns), (metadata.st_ino, metadata.st_mtime_ns))
+        self.assertEqual((self.package / 'runner/native/interrupt.py').read_bytes(),
+                         self.results['runner/native/interrupt.py'])
+
+    def test_unknown_interrupt_baseline_rejects_before_any_write(self):
+        target = self.package / 'runner/native/interrupt.py'
+        target.write_text('unknown interrupt source\n')
+        with self.assertRaisesRegex(ValueError, 'BASELINE_MISMATCH'):
+            self.apply()
+        for relative in ['host/connect.py', 'harnesses/opencode_native/forwarder.py']:
+            self.assertEqual((self.package / relative).read_bytes(), self.originals[relative])
+        self.assertEqual(target.read_text(), 'unknown interrupt source\n')
+
+    def test_corrupt_interrupt_patch_rejects_before_any_write(self):
+        (self.assets / 'opencode-native-interrupt.patch').write_text('corrupted')
+        with self.assertRaisesRegex(ValueError, 'PATCH_HASH_MISMATCH'):
+            self.apply()
+        self.assert_originals()
 
     def test_unknown_second_baseline_rejects_entire_set_before_writes(self):
         target = self.package / 'harnesses/opencode_native/forwarder.py'
@@ -124,18 +157,21 @@ class InstallerTests(unittest.TestCase):
             INSTALLER.apply_manifest(self.package, self.manifest_path, '0.17.0')
         self.assert_originals()
 
-    def test_manifest_cannot_omit_or_redirect_the_second_patch(self):
+    def test_manifest_cannot_omit_or_redirect_any_patch(self):
         original = json.dumps(self.manifest)
-        for mode in ['omitted', 'duplicate', 'traversal', 'wrong-version']:
-            with self.subTest(mode=mode):
-                self.manifest = json.loads(original)
-                if mode == 'omitted': self.manifest['patches'].pop()
-                if mode == 'duplicate': self.manifest['patches'][1] = self.manifest['patches'][0]
-                if mode == 'traversal': self.manifest['patches'][1]['files'][0]['sdkRelativePath'] = '../outside.py'
-                if mode == 'wrong-version': self.manifest['sdkVersion'] = '0.17.0'
-                self.save_manifest()
-                with self.assertRaisesRegex(ValueError, 'INVALID_MANIFEST'): self.apply()
-                self.assert_originals()
+        for index in range(3):
+            for mode in ['omitted', 'duplicate', 'traversal', 'overlapping-target', 'wrong-version']:
+                with self.subTest(index=index, mode=mode):
+                    self.manifest = json.loads(original)
+                    if mode == 'omitted': self.manifest['patches'].pop(index)
+                    if mode == 'duplicate': self.manifest['patches'][index] = self.manifest['patches'][(index + 1) % 3]
+                    if mode == 'traversal': self.manifest['patches'][index]['files'][0]['sdkRelativePath'] = '../outside.py'
+                    if mode == 'overlapping-target':
+                        self.manifest['patches'][index]['files'][0]['sdkRelativePath'] = self.manifest['patches'][(index + 1) % 3]['files'][0]['sdkRelativePath']
+                    if mode == 'wrong-version': self.manifest['sdkVersion'] = '0.17.0'
+                    self.save_manifest()
+                    with self.assertRaisesRegex(ValueError, 'INVALID_MANIFEST'): self.apply()
+                    self.assert_originals()
 
     def test_symlink_file_and_parent_are_rejected(self):
         target = self.package / 'harnesses/opencode_native/forwarder.py'

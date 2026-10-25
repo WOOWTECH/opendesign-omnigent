@@ -4,8 +4,15 @@
 
 This release fixes an OpenCode retry that otherwise leaves an exhausted provider
 quota invisible in the conversation. Explicit `usage_limit_reached` and
-`insufficient_quota` retry errors produce one durable notice per turn. The user
-can Stop and choose another model; temporary rate limits retain native retries.
+`insufficient_quota` retry errors produce one durable notice per turn. A separate
+native interrupt patch wires Interrupt / Stop to OpenCode's session abort.
+Confirm backend retries have stopped before choosing another model; clearing
+the UI busy indicator is not evidence of cancellation. Temporary rate limits
+retain native retries until the user interrupts.
+
+The v0.1.6 candidate is not accepted solely on quota visibility or a successful
+reply. Final acceptance must include the native interrupt regression suite and
+a real GUI stop followed by a successful conversation with an available model.
 
 The complete current Paseo/MCP image is pinned to digest `daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b`
 in Dockerfile and `base-overlay.json`. The overlay updates only the dependency
@@ -20,8 +27,11 @@ base MCP hashes. The packager rejects web/contracts source changes relative to
 This host-only contract must be deliberately updated before a frontend release.
 
 The SDK remains version 0.16.0. A shared manifest pins the original and result
-hashes of `host/connect.py` and `harnesses/opencode_native/forwarder.py`.
-Image builds apply both patches before switching back to the application user.
+hashes of `host/connect.py`, `harnesses/opencode_native/forwarder.py` and
+`runner/native/interrupt.py`. The third independent asset is
+`opencode-native-interrupt.patch`; the existing host and quota patches retain
+their reviewed bytes and target hashes. Each target occurs in exactly one patch.
+Image builds apply all three patches before switching back to the application user.
 Private installs verify or apply the same patches on installation, update and
 reuse. External SDK installations are inspected without modification; an
 incompatible external SDK falls back to the integration's private installation.
@@ -111,14 +121,18 @@ using that separate action.
 - Build final daemon assets after the dependency installer and SDK changes land.
 - Run the [installed SDK regression suite](sdk-patches/tests/native/README.md)
   against the entire SDK in a disposable candidate container. The unpatched
-  base is the red control; all 63 cases must pass in the candidate.
+  base is the red control. Run the complete forwarder/reconnect suites plus the
+  native interrupt suite; record the collected counts and failures for this
+  exact candidate. The earlier 63-test quota suite alone is insufficient.
 - Verify SDK reuse in a fresh container, then host lifecycle,
   GUI connection and model conversations. A successful image build verifies
   imports and native CLI resolution; it does not prove server login or replies.
 - Build/push the candidate and retain its immutable digest.
 - Trigger an explicitly exhausted model through the real GUI. Verify the quota
-  notice appears, survives reload, and Stop ends the turn; then obtain a reply
-  from an available model. A visible model catalog alone does not prove quota.
+  notice appears and survives reload. Interrupt / Stop must reach native abort
+  and end backend retries, with no continuing provider requests from that turn;
+  a stopped-looking GUI alone does not pass. After confirming cancellation,
+  obtain a reply from an available model. A visible catalog does not prove quota.
 - In the actual tenant, test the native launcher, fresh connection form,
   disconnect, disable, re-enable and restart persistence. Check the original
   MCP Server and CLI Terminal launchers as well.
