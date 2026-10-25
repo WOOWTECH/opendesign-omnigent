@@ -14,3 +14,10 @@
 .selectors select { max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--bg); font: inherit; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .issue { color: var(--danger-text, #b42318); font-size: 13px; line-height: 1.5; }
+
+.providerGuide { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.providerGuide summary { cursor: pointer; font-weight: 600; }
+.providerGuide p { margin: 10px 0; }
+.loginCommands { list-style: none; padding: 0; display: grid; gap: 10px; }
+.loginCommands li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.loginCommands code { overflow-wrap: anywhere; }

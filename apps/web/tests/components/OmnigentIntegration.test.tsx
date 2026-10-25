@@ -266,6 +266,21 @@ describe('native Omnigent integration', () => {
     expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
   });
 
+  it.each([
+    { enabled: false }, { loginConfirmed: false }, { host: { connected: false, name: 'fixture-host' } },
+    { host: { connected: true } }, { installedEngines: [] }, { server: 'javascript:alert(1)' },
+  ] as Partial<OmnigentIntegrationStatus>[])('hides provider setup when the connection is not usable: %j', async patch => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...fourEngineFailure(), ...patch })));
+    renderIntegration();
+    await screen.findByTestId('omnigent-integration-section');
+    expect(screen.queryByTestId('omnigent-provider-guide')).toBeNull();
+  });
+  it('shows one shared provider guide for the confirmed host', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(fourEngineFailure())));
+    renderIntegration();
+    expect(await screen.findAllByTestId('omnigent-provider-guide')).toHaveLength(1);
+  });
+
   it('guides the actual four-engine failure to native Local CLI without assuming Pi needs auth', async () => {
     const onOpenAgentSettings = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(fourEngineFailure()))));

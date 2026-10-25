@@ -30,6 +30,22 @@ export const LOCALE_LABEL: Record<Locale, string> = {
 // flat (not deeply nested) so missing-key TS errors point straight at the
 // offending string instead of a generic object mismatch.
 export interface Dict {
+  'omnigent.providerGuide': string;
+  'omnigent.providerHost': string;
+  'omnigent.providerNativeHint': string;
+  'omnigent.providerNativeOpen': string;
+  'omnigent.providerTerminalHint': string;
+  'omnigent.providerTerminalOpen': string;
+  'omnigent.providerTerminalFallback': string;
+  'omnigent.providerCopy': string;
+  'omnigent.providerCopied': string;
+  'omnigent.providerCopyFailed': string;
+  'omnigent.providerPiHint': string;
+  'omnigent.providerFinish': string;
+  'omnigent.errorFreeQuota': string;
+  'omnigent.errorQuota': string;
+  'omnigent.errorRateLimit': string;
+
   'omnigent.errorEngineTimeout': string;
   'omnigent.errorModelCatalog': string;
   'omnigent.errorEngineNotReady': string;

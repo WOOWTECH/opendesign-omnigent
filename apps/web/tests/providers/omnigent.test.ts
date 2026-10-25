@@ -47,6 +47,11 @@ describe('native Omnigent request boundary', () => {
     for (const url of ['https://u:p@example.com', 'https://example.com?token=p', 'https://example.com#p', 'javascript:alert(1)'])
       expect(omnigentPublicUrl(url)).toBeNull();
   });
+  it.each(['RATE_LIMITED', 'FREE_USAGE_LIMIT_REACHED', 'INSUFFICIENT_QUOTA', 'QUOTA_EXCEEDED'])('preserves only the structured provider code %s', code => {
+    expect(safeOmnigentIssueCode(code)).toBe(code);
+    expect(omnigentNeedsAgentAuth(code)).toBe(false);
+    expect(safeOmnigentIssueCode(code + ' private-detail')).toBe('REQUEST_FAILED');
+  });
   it('maps only known native-auth, model-catalog and timeout receipt reasons', () => {
     expect(safeOmnigentIssueCode('NATIVE_AUTH_REQUIRED')).toBe('NEEDS_AUTH');
     expect(safeOmnigentIssueCode('needs-auth')).toBe('NEEDS_AUTH');

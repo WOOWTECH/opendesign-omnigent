@@ -5,6 +5,7 @@ import { openExternalUrl } from '../providers/registry';
 import { omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl, safeOmnigentIssueCode } from '../providers/omnigent';
 import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import { OmnigentIssue } from './OmnigentIssue';
+import { OmnigentProviderGuide } from './OmnigentProviderGuide';
 import { AgentIcon } from './AgentIcon';
 import { Icon } from './Icon';
 import styles from './OmnigentIntegrationSection.module.css';
@@ -42,6 +43,8 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
     {status?.installed ? <>
       <p className={styles.hint}>{status.host.connected ? t('omnigent.hostOnline') : t('omnigent.hostOffline')}
         {status.host.name ? ` · ${status.host.name}` : ''}</p>
+      {status.enabled && status.loginConfirmed && status.host.connected && status.host.name && serverUrl && installed.length > 0
+        ? <OmnigentProviderGuide key={status.host.id ?? status.host.name} hostName={status.host.name} serverUrl={serverUrl} engines={installed} /> : null}
       <h4>{t('omnigent.engines')}</h4>
       {installed.length === 0 ? <p className={styles.hint}>{t('omnigent.noEngines')}</p> :
         <ul className={styles.engines}>{installed.map((id) => {

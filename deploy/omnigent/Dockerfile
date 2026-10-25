@@ -49,4 +49,4 @@ LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
       io.woow.opendesign.upstream-revision="89e64d813bb1c7a11519b3f668f011f7017637d7" \
       io.woow.opendesign.artifact-sha256="${ARTIFACT_SHA256}" \
       io.woow.opendesign.manifest-sha256="${ARTIFACT_SHA256}" \
-      io.woow.opendesign.omnigent-integration="0.1.4"
+      io.woow.opendesign.omnigent-integration="0.1.5"

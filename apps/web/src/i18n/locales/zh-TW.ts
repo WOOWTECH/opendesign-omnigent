@@ -1,6 +1,22 @@
 import type { Dict } from "../types";
 
 export const zhTW: Dict = {
+  "omnigent.providerGuide": "設定模型供應商",
+  "omnigent.providerHost": "請使用這台主機：{host}",
+  "omnigent.providerNativeHint": "在 Omnigent 開啟新對話並選擇上方主機。若所選代理顯示 Set up，點入後選 Set up auth，即可輸入 API key 或 gateway。儲存前請確認對話框中的主機名稱。",
+  "omnigent.providerNativeOpen": "開啟 Omnigent 登入設定",
+  "omnigent.providerTerminalHint": "訂閱登入或沒有網頁認證表單的代理，請開啟這台 OpenDesign 的終端機，執行下方對應指令，並在瀏覽器完成供應商登入。",
+  "omnigent.providerTerminalOpen": "開啟 CLI 終端機",
+  "omnigent.providerTerminalFallback": "若有 CLI 終端機，請從「外掛」開啟；也可使用這台主機的終端機。",
+  "omnigent.providerCopy": "複製指令",
+  "omnigent.providerCopied": "指令已複製。",
+  "omnigent.providerCopyFailed": "無法複製，請選取上方指令手動複製。",
+  "omnigent.providerPiHint": "接著使用 /login 選擇供應商，再用 /model 選擇模型。",
+  "omnigent.providerFinish": "完成登入後，回到此頁「重新整理狀態」並「驗證」。憑證請填入原生登入表單，不要貼在設定對話中；收到真正的代理回覆後，才會標示已驗證。",
+  "omnigent.errorFreeQuota": "供應商的免費額度已達上限。請檢查供應商方案，或等待額度恢復後再驗證。",
+  "omnigent.errorQuota": "供應商回報額度不足。請檢查供應商帳號與可用額度後再驗證。",
+  "omnigent.errorRateLimit": "供應商目前限制請求頻率，請稍後再驗證。",
+
   'omnigent.errorEngineTimeout': "代理驗證逾時。請開啟代理查看首次執行設定，然後重新驗證。",
   'omnigent.errorModelCatalog': "代理模型列表無法使用。請在本機 CLI 中檢查供應商與模型設定，重新整理狀態後再次驗證。",
   'omnigent.errorEngineNotReady': "此代理已安裝，但尚未就緒。請在本機 CLI 中檢查設定，然後重新驗證。",

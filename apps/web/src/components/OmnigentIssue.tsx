@@ -8,6 +8,9 @@ export function useOmnigentIssueMessage(code?: string | null, engine = false): s
   const safe = safeOmnigentIssueCode(code);
   const message = engine && ['OP_TIMEOUT', 'REPLY_TIMEOUT', 'NATIVE_START_TIMEOUT', 'TIMEOUT', 'ADAPTER_TIMEOUT'].includes(safe) ? t('omnigent.errorEngineTimeout')
     : engine && ['MODELS_UNAVAILABLE', 'MODEL_UNAVAILABLE'].includes(safe) ? t('omnigent.errorModelCatalog')
+    : safe === 'FREE_USAGE_LIMIT_REACHED' ? t('omnigent.errorFreeQuota')
+    : ['INSUFFICIENT_QUOTA', 'QUOTA_EXCEEDED'].includes(safe) ? t('omnigent.errorQuota')
+    : safe === 'RATE_LIMITED' ? t('omnigent.errorRateLimit')
     : safe === 'ENGINE_NOT_READY' ? t('omnigent.errorEngineNotReady')
     : safe === 'NEEDS_AUTH' ? t('settings.agentAuthRequired')
     : safe === 'OPERATION_BUSY' ? t('omnigent.errorBusy')

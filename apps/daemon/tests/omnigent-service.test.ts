@@ -120,6 +120,24 @@ describe('Omnigent native service', () => {
     f.adapter.mockImplementation(async input => input.action === 'verify' ? { ok: true, data: { ok: true, reply: 'user-echo', cleanup: 'stopped' } } : original(input));
     const s = await f.setup(); expect(s.phase).toBe('error'); expect(s.verification.claude?.ok).toBe(false);
   });
+  it.each(['RATE_LIMITED', 'FREE_USAGE_LIMIT_REACHED', 'INSUFFICIENT_QUOTA', 'QUOTA_EXCEEDED'])(
+    'preserves structured provider reason %s in persisted verification receipts', async reason => {
+      const f = await fixture(); const original = f.adapter.getMockImplementation()!;
+      f.adapter.mockImplementation(async input => input.action === 'verify' && input.engine === 'opencode'
+        ? { ok: true, data: { ok: false, reason, cleanup: 'stopped', sessionId: 'probe-opencode',
+          model: 'anthropic/claude-sonnet', message: 'synthetic-private-provider-message' } }
+        : original(input));
+      const status = await f.setup();
+      expect(status.phase).toBe('error');
+      expect(status.verification.opencode).toMatchObject({ ok: false, reason, cleanup: 'stopped', sessionId: 'probe-opencode' });
+      expect(status.issue?.code).toBe('INCOMPLETE_CHAT_VERIFICATION');
+      const persisted = await readFile(path.join(f.dir, 'integrations/omnigent/state.json'), 'utf8');
+      expect(JSON.parse(persisted).verification.opencode.reason).toBe(reason);
+      const restarted = await new OmnigentIntegrationService(f.options).status('local', true);
+      expect(restarted.verification.opencode?.reason).toBe(reason);
+      expect(persisted + JSON.stringify(status) + JSON.stringify(restarted)).not.toContain('synthetic-private-provider-message');
+    },
+  );
   it('does not accept a reply whose runner stop is unconfirmed', async () => {
     const f = await fixture(); const original = f.adapter.getMockImplementation()!;
     f.adapter.mockImplementation(async input => input.action === 'verify' ? { ok: true, data: { ok: true, reply: 'OMNIGENT_CONNECTION_OK', cleanup: 'stop_unconfirmed' } } : original(input));

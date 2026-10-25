@@ -868,7 +868,11 @@ class Adapter:
                                 and isinstance(item.get("code"), str)
                                 and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", item["code"])), None)
                 if failure:
-                    result["reason"] = failure.upper() if failure.upper() in {"NEEDS_LOGIN", "AUTH_REQUIRED", "AUTH_FAILED", "ENGINE_NOT_READY", "NATIVE_AUTH_REQUIRED", "RUNNER_UNAVAILABLE", "MODEL_NOT_FOUND", "RATE_LIMITED"} else "ENGINE_FAILED"
+                    result["reason"] = failure.upper() if failure.upper() in {
+                        "NEEDS_LOGIN", "AUTH_REQUIRED", "AUTH_FAILED", "ENGINE_NOT_READY", "NATIVE_AUTH_REQUIRED",
+                        "RUNNER_UNAVAILABLE", "MODEL_NOT_FOUND", "RATE_LIMITED", "FREE_USAGE_LIMIT_REACHED",
+                        "INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED",
+                    } else "ENGINE_FAILED"
                     break
                 if self.clock() >= deadline:
                     break

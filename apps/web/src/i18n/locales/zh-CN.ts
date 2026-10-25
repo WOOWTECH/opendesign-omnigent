@@ -1,6 +1,22 @@
 import type { Dict } from "../types";
 
 export const zhCN: Dict = {
+  "omnigent.providerGuide": "设置模型供应商",
+  "omnigent.providerHost": "请使用这台主机：{host}",
+  "omnigent.providerNativeHint": "在 Omnigent 开启新对话并选择上方主机。若所选代理显示 Set up，点击后选择 Set up auth，即可输入 API key 或 gateway。保存前请确认对话框中的主机名称。",
+  "omnigent.providerNativeOpen": "打开 Omnigent 登录设置",
+  "omnigent.providerTerminalHint": "订阅登录或没有网页认证表单的代理，请打开这台 OpenDesign 的终端，执行下方对应命令，并在浏览器完成供应商登录。",
+  "omnigent.providerTerminalOpen": "打开 CLI 终端",
+  "omnigent.providerTerminalFallback": "若有 CLI 终端，请从“插件”打开；也可使用这台主机的终端。",
+  "omnigent.providerCopy": "复制命令",
+  "omnigent.providerCopied": "命令已复制。",
+  "omnigent.providerCopyFailed": "无法复制，请选中上方命令手动复制。",
+  "omnigent.providerPiHint": "接着使用 /login 选择供应商，再用 /model 选择模型。",
+  "omnigent.providerFinish": "完成登录后，返回此页“刷新状态”并“验证”。凭证请填入原生登录表单，不要粘贴在设置对话中；收到真正的代理回复后，才会标记已验证。",
+  "omnigent.errorFreeQuota": "供应商的免费额度已达上限。请检查供应商方案，或等待额度恢复后再验证。",
+  "omnigent.errorQuota": "供应商报告额度不足。请检查供应商账号和可用额度后再验证。",
+  "omnigent.errorRateLimit": "供应商目前限制请求频率，请稍后再验证。",
+
   'omnigent.errorEngineTimeout': "代理验证超时。请打开代理查看首次运行设置，然后重新验证。",
   'omnigent.errorModelCatalog': "代理模型列表不可用。请在本机 CLI 中检查供应商和模型设置，刷新状态后重新验证。",
   'omnigent.errorEngineNotReady': "此代理已安装，但尚未就绪。请在本机 CLI 中检查设置，然后重新验证。",
