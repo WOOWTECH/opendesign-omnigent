@@ -2,7 +2,8 @@ import type { Dict } from "../types";
 
 export const zhTW: Dict = {
   'omnigent.errorEngineTimeout': "代理驗證逾時。請開啟代理查看首次執行設定，然後重新驗證。",
-  'omnigent.errorModelCatalog': "代理模型列表無法使用。請檢查代理設定、重新整理狀態，然後重新驗證。",
+  'omnigent.errorModelCatalog': "代理模型列表無法使用。請在本機 CLI 中檢查供應商與模型設定，重新整理狀態後再次驗證。",
+  'omnigent.errorEngineNotReady': "此代理已安裝，但尚未就緒。請在本機 CLI 中檢查設定，然後重新驗證。",
   'omnigent.openEngine': "開啟代理",
   'omnigent.openEngineHint': "在現有驗證對話中檢查代理設定。",
 

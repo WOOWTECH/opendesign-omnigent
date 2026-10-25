@@ -8,6 +8,7 @@ export function useOmnigentIssueMessage(code?: string | null, engine = false): s
   const safe = safeOmnigentIssueCode(code);
   const message = engine && ['OP_TIMEOUT', 'REPLY_TIMEOUT', 'NATIVE_START_TIMEOUT', 'TIMEOUT', 'ADAPTER_TIMEOUT'].includes(safe) ? t('omnigent.errorEngineTimeout')
     : engine && ['MODELS_UNAVAILABLE', 'MODEL_UNAVAILABLE'].includes(safe) ? t('omnigent.errorModelCatalog')
+    : safe === 'ENGINE_NOT_READY' ? t('omnigent.errorEngineNotReady')
     : safe === 'NEEDS_AUTH' ? t('settings.agentAuthRequired')
     : safe === 'OPERATION_BUSY' ? t('omnigent.errorBusy')
     : ['MISSING_DEPENDENCY', 'DEPENDENCY_MISSING', 'DEPENDENCIES_MISSING', 'ENGINE_UNAVAILABLE', 'NO_AVAILABLE_ENGINE'].includes(safe) ? t('omnigent.errorDependency')

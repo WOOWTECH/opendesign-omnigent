@@ -32,6 +32,7 @@ export const LOCALE_LABEL: Record<Locale, string> = {
 export interface Dict {
   'omnigent.errorEngineTimeout': string;
   'omnigent.errorModelCatalog': string;
+  'omnigent.errorEngineNotReady': string;
   'omnigent.openEngine': string;
   'omnigent.openEngineHint': string;
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@open-design/components';
 import { useT } from '../i18n';
 import { openExternalUrl } from '../providers/registry';
-import { omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl } from '../providers/omnigent';
+import { omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl, safeOmnigentIssueCode } from '../providers/omnigent';
 import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import { OmnigentIssue } from './OmnigentIssue';
 import { AgentIcon } from './AgentIcon';
@@ -48,6 +48,8 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
           const receipt = status.verification[id];
           const failed = receipt?.ok === false;
           const needsAuth = failed && omnigentNeedsAgentAuth(receipt.reason);
+          const needsSetup = failed && ['ENGINE_NOT_READY', 'MODELS_UNAVAILABLE', 'MODEL_UNAVAILABLE'].includes(safeOmnigentIssueCode(receipt.reason));
+          const authStatus = status.engines[id]?.authStatus;
           const probeUrl = failed && status.enabled && status.loginConfirmed ? omnigentProbeUrl(status.server, receipt) : null;
           return <li key={id}>
           <AgentIcon id={id} size={20} /><strong>{id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id}</strong>
@@ -56,15 +58,16 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
           {failed ? <OmnigentIssue code={receipt.reason} engine /> : null}
           {probeUrl ? <Button size="sm" title={t('omnigent.openEngineHint')}
             onClick={() => void openExternalUrl(probeUrl)}>{t('omnigent.openEngine')}</Button> : null}
-          {status.engines[id]?.authStatus === 'needs-auth' || needsAuth ? <div className={styles.engineAdvice}>
+          {authStatus === 'needs-auth' || needsAuth ? <div className={styles.engineAdvice}>
             {!needsAuth ? <strong>{t('settings.agentAuthRequired')}</strong> : null}
             <p>{t('settings.agentInstall.stepAuth')}</p>
             <Button size="sm" disabled={!onOpenAgentSettings} onClick={onOpenAgentSettings}>{t('settings.localCli')}</Button>
-          </div> : status.engines[id]?.authStatus === 'binary-missing' ? <p className={styles.engineAdvice}>
-            {t('settings.testAgentMissing', { agentName: id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id })}
-          </p> : status.engines[id]?.authStatus === 'version-too-low' ? <p className={styles.engineAdvice}>
-            {t('omnigent.engineVersionOld')}
-          </p> : null}
+          </div> : needsSetup || authStatus === 'binary-missing' || authStatus === 'version-too-low' ? <div className={styles.engineAdvice}>
+            {authStatus === 'binary-missing' ? <p>
+              {t('settings.testAgentMissing', { agentName: id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id })}
+            </p> : authStatus === 'version-too-low' ? <p>{t('omnigent.engineVersionOld')}</p> : null}
+            {needsSetup ? <Button size="sm" disabled={!onOpenAgentSettings} onClick={onOpenAgentSettings}>{t('settings.localCli')}</Button> : null}
+          </div> : null}
         </li>; })}</ul>}
       {status.modules?.length ? <>
         <h4>{t('omnigent.modules')}</h4>
