@@ -48,6 +48,17 @@ export interface McpConfig {
   servers: McpServerConfig[];
 }
 
+/** PUT /api/mcp/servers/:id. Null expected requires absence; otherwise full-entry CAS. */
+export interface McpServerUpsertRequest {
+  /** Null deletes only the URL-selected entry; absent + null is an idempotent no-op. */
+  server: McpServerConfig | null;
+  expected: McpServerConfig | null;
+}
+export interface McpServerUpsertResponse {
+  /** Only this entry is returned; null after deletion. Peers are never included. */
+  server: McpServerConfig | null;
+}
+
 /** An optional environment variable / header field a template needs the user
  * to supply before the server can start. The UI renders these as inputs. */
 export interface McpTemplateField {

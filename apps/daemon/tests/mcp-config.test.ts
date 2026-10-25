@@ -30,6 +30,44 @@ describe('mcp-config storage', () => {
     expect(cfg).toEqual({ servers: [] });
   });
 
+  it('serializes updater reads with whole-config writes in the same queue', async () => {
+    const peer = { id: 'peer', transport: 'stdio' as const, command: 'peer', enabled: false };
+    const added = { id: 'added', transport: 'stdio' as const, command: 'added', enabled: true };
+    const first = writeMcpConfig(dataDir, { servers: [peer] });
+    const second = writeMcpConfig(dataDir, (previous) => ({ servers: [...previous.servers, added] }));
+    await Promise.all([first, second]);
+    expect(await readMcpConfig(dataDir)).toEqual({ servers: [peer, added] });
+  });
+
+  it('awaits async updaters before allowing the next read or write', async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const peer = { id: 'peer', transport: 'stdio' as const, command: 'peer', enabled: false };
+    const first = writeMcpConfig(dataDir, async () => {
+      started();
+      await gate;
+      return { servers: [peer] };
+    });
+    await entered;
+    let observed: unknown;
+    const second = writeMcpConfig(dataDir, (previous) => { observed = previous; return previous; });
+    try {
+      expect(observed).toBeUndefined();
+    } finally {
+      release();
+    }
+    await Promise.all([first, second]);
+    expect(observed).toEqual({ servers: [peer] });
+  });
+
+  it('does not poison the queue or write when an updater rejects', async () => {
+    const previous = await writeMcpConfig(dataDir, { servers: [{ id: 'peer', command: 'peer' }] });
+    await expect(writeMcpConfig(dataDir, () => { throw new Error('conflict'); })).rejects.toThrow('conflict');
+    expect(await writeMcpConfig(dataDir, (current) => current)).toEqual(previous);
+  });
+
   it('returns empty config for a corrupt JSON file', async () => {
     await writeFile(path.join(dataDir, 'mcp-config.json'), '{not valid');
     const cfg = await readMcpConfig(dataDir);

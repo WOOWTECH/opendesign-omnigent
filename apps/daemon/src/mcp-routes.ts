@@ -9,6 +9,7 @@ import { MCP_TEMPLATES, buildAcpMcpServers, buildClaudeMcpJson, isManagedProject
 import { beginAuth, exchangeCodeForToken, refreshAccessToken } from './mcp-oauth.js';
 import { clearToken, getToken, isTokenExpired, readAllTokens, setToken } from './mcp-tokens.js';
 import type { RouteDeps } from './server-context.js';
+import { registerMcpServerRoutes } from './routes/mcp-servers.js';
 
 export interface RegisterMcpRoutesDeps extends RouteDeps<'http' | 'paths' | 'mcp'> {}
 
@@ -16,6 +17,7 @@ export interface RegisterMcpRoutesDeps extends RouteDeps<'http' | 'paths' | 'mcp
 const MCP_REGISTRATION_REFRESH_DELAY_MS = 5_000;
 
 export function registerMcpRoutes(app: Express, ctx: RegisterMcpRoutesDeps) {
+  registerMcpServerRoutes(app, ctx);
   const { isLocalSameOrigin, resolvedPortRef, sendApiError } = ctx.http;
   const { OD_BIN, RUNTIME_DATA_DIR, PROJECTS_DIR } = ctx.paths;
   const { pendingAuth, daemonUrlRef, inheritedEnvironment } = ctx.mcp;
