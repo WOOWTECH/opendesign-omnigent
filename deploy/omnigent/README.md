@@ -1,33 +1,24 @@
 # Omnigent derivative packaging
 
-## Scope
+## v0.1.5 current-base overlay
 
-The Dockerfile inherits the complete PaaS `20261024.0943` image by digest. It
-replaces daemon dist and web out, and adds the bundled Omnigent plugin. Existing
-MCP, native CLI versions, contracts runtime, entrypoint and command come from
-that base. It also copies the precompiled Omnigent 0.16.0 SDK from the fixed
-`20261005.1409` image digest. Only `/opt/omnigent` and the hash-listed re2,
-abseil and ICU runtime closure are copied. Existing system libraries must
-match byte for byte; a conflict fails the build. No agent engine is copied.
-The SDK is copied in layers capped at 64 MiB before compression, avoiding the
-registry's Cloudflare 413 limit observed with a single SDK layer.
+During acceptance the target advanced from chart 0.5.7/revision29 to chart
+0.5.8/revision30 with a newer Paseo/Omnigent image. The deployment preflight
+rejected the stale baseline. The current base is now pinned in Dockerfile and
+`base-overlay.json`; no chart or service values are reverted.
 
-The daemon owns private SDK installation, hash-verified SDK patching and the
-private host supervisor. The PaaS Alpine image reuses the precompiled SDK;
-compatible hosts without it can use the private SDK installer. Its build must include SDK patch assets, `supervisor.sh`
-and `og_helper.py` below `dist/integrations/omnigent/`. The packager copies the
-entire dist tree, including other kit assets and executable modes. The reviewed
-SDK patch stays in `deploy/omnigent/sdk-patches`; `build-assets.ts` copies it to
-dist. The same reviewed patch is applied to the image SDK during the build.
+Image file hashes showed the same web output and three native MCP daemon
+additions/updates, plus the Paseo launcher. Preserve that complete image and
+replace only the reviewed Omnigent adapter, rebuilt web output and Omnigent
+manifest. `verify-overlay.py` checks every unchanged compiled daemon file and
+the exact base MCP hashes. A future additional backend change fails the build
+until the overlay contract is deliberately extended. The packager also refuses
+source edits to the base-owned MCP units that this release preserves.
 
-An isolated test of the original Alpine base failed to install the SDK from
-PyPI because google-re2 needs development headers. The precompiled SDK removes
-that requirement from tenant setup. The build checks SDK imports, a real re2
-match, and Claude SDK resolution to the current `/usr/local/bin/claude`.
-
-The inherited branding scripts run again on the replacement web/daemon output.
-Manifest file hashes describe the input bytes before those scripts run, not the
-final transformed image filesystem.
+The SDK, native CLI versions, Paseo files, launcher, environment and entrypoint
+are inherited. The build verifies the existing SDK and applies the normal
+branding scripts to the new web output. The former SDK donor/split-layer files
+remain as historical packaging references; this release does not recopy them.
 
 ## Prepare the context
 
@@ -103,8 +94,8 @@ builder. No standalone Kaniko/BuildKit service was found; the existing dind
 builder is the confirmed path.
 
 The service244 image-only desired-state update uses the existing Odoo
-controller/operator path. The pre-change snapshot at revision 27 is the rollback
-reference. The packaging commands themselves do not update a workload or a
+controller/operator path. The immediately preceding service snapshot is the rollback reference.
+Use the current baseline revision and chart version; reject concurrent changes. The packaging commands themselves do not update a workload or a
 platform template. A normal restart preserves the configured image; the PaaS
 Redeploy action may reapply a template image, so check the desired image before
 using that separate action.

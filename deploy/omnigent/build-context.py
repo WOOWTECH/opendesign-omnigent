@@ -11,8 +11,7 @@ import subprocess
 import tarfile
 
 
-BASE_IMAGE = ('jcr-prod.woowtech.io/woow-paas-docker-local/open-design:20261024.0943'
-              '@sha256:5252ac5b3d97b094f3093619ac7eab8003455c817687f9d474f3bf9e26f9e5ce')
+BASE_IMAGE = 'jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:5cf39559f13fc5e49c3564ad4668c8ce64a49b1a27ea2b445b2a701041d60595'
 UPSTREAM_REVISION = '89e64d813bb1c7a11519b3f668f011f7017637d7'
 
 
@@ -111,19 +110,27 @@ def main():
         raise ValueError('Dockerfile must inherit the pinned complete PaaS image.')
     entries['Dockerfile'] = dockerfile
     modes['Dockerfile'] = 0o644
-    for name in ('manifest.json', 'materialize.py', 'split-sdk.py'):
-        entries['sdk-runtime/' + name] = (root / 'deploy/omnigent/sdk-runtime' / name).read_bytes()
-        modes['sdk-runtime/' + name] = 0o644
-    sdk_runtime = json.loads(entries['sdk-runtime/manifest.json'])
-    if dockerfile.decode().splitlines()[0] != 'FROM ' + sdk_runtime['sourceImage'] + ' AS sdk':
-        raise ValueError('SDK source must match the pinned runtime manifest.')
+    overlay = json.loads((root / 'deploy/omnigent/base-overlay.json').read_text())
+    if overlay['baseImage'] != BASE_IMAGE:
+        raise ValueError('Overlay contract must match the pinned current base.')
+    # These base-owned MCP units must not silently hide a future source edit.
+    changed = git('diff', '--name-only', 'f95a85bcd534c3b981b0a9a494b0c92f9dca480d', revision,
+                  '--', 'apps/daemon/src/mcp-config.ts', 'apps/daemon/src/mcp-routes.ts',
+                  'apps/daemon/src/routes/mcp-servers.ts')
+    if changed:
+        raise ValueError('MCP source changed; integrate the base overrides before packaging.')
+    for name in ('base-overlay.json', 'verify-overlay.py'):
+        entries[name] = (root / 'deploy/omnigent' / name).read_bytes()
+        modes[name] = 0o644
+    sdk_runtime = json.loads((root / 'deploy/omnigent/sdk-runtime/manifest.json').read_text())
     manifest = {
         'schemaVersion': 2,
         'sourceRevision': revision,
         'upstreamRevision': UPSTREAM_REVISION,
         'baseImage': BASE_IMAGE,
-        'baseSourceRevision': 'b8a1371924d3aedb74dff563a5ff35a783919dee',
-        'runtimeDependencyClosure': 'Pinned PaaS base plus hash-verified Omnigent SDK runtime closure',
+        'baseSourceRevision': 'f95a85bcd534c3b981b0a9a494b0c92f9dca480d',
+        'runtimeDependencyClosure': 'Pinned current Paseo/Omnigent base; preserved MCP overrides and reviewed daemon overlay',
+        'daemonOverlay': overlay,
         'sdkRuntime': sdk_runtime,
         'contractsRuntime': 'Inherited; release assumes source changes are type-only',
         'lockfileSha256': sha256((root / 'pnpm-lock.yaml').read_bytes()),
