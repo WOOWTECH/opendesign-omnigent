@@ -2101,9 +2101,29 @@ html:has(.workspace-shell--desktop[data-host-platform='darwin']) .community-temp
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .plugin-marketplace__row-action,
+  .plugin-marketplace__row-action:not(.plugin-launcher-action),
   .plugin-marketplace__row > svg {
     display: none;
+  }
+
+  /* Native launchers remain available on both cards and detail pages.
+     Put the card action below its text so narrow screens retain room for
+     the title and Built-in badge without shrinking the touch target. */
+  .plugin-marketplace__item.is-clickable .plugin-marketplace__row--launcher {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .plugin-marketplace__row--launcher .plugin-marketplace__name-row {
+    flex-wrap: wrap;
+  }
+
+  .plugin-marketplace__row--launcher > .plugin-launcher-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .plugin-launcher-action {
+    min-height: 44px;
   }
 }
 

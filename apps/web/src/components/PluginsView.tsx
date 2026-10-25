@@ -2312,7 +2312,7 @@ export function ExtensionsMarketplace({
                     }
                     : {})}
                 >
-                  <div className="plugin-marketplace__row">
+                  <div className={`plugin-marketplace__row${card.action.kind === 'open' ? ' plugin-marketplace__row--launcher' : ''}`}>
                     <span
                       className="plugin-marketplace__icon"
                       style={{ '--plugin-accent': card.accent } as CSSProperties}
@@ -2360,7 +2360,7 @@ export function ExtensionsMarketplace({
                       // Assistant shell rewrites anchor hrefs to add its ingress
                       // prefix, which a computed URL would bypass.
                       <a
-                        className="plugin-marketplace__row-action"
+                        className="plugin-marketplace__row-action plugin-launcher-action"
                         href={card.action.path}
                         target="_blank"
                         rel="noopener noreferrer"
