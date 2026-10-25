@@ -1,4 +1,4 @@
-FROM jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:5cf39559f13fc5e49c3564ad4668c8ce64a49b1a27ea2b445b2a701041d60595
+FROM jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:d2677bf76f4b44bc4b344d1e254d4da0f33361e3bf01db92762e1deb9ef41454
 ARG SOURCE_REVISION
 ARG ARTIFACT_SHA256
 USER root
@@ -26,7 +26,7 @@ RUN python3 -B -c 'import hashlib,json,pathlib,sys; raw=pathlib.Path("/usr/local
  && test -s /app/apps/daemon/dist/integrations/omnigent/sdk-patches/manifest.json \
  && test -s /app/plugins/_official/woow/woow-omnigent/open-design.json \
  && /opt/omnigent/venv/bin/python -B -c 'import omnigent,re2,celpy,yaml,httpx; from importlib.metadata import version; assert version("omnigent")=="0.16.0"; assert re2.match("sdk", "sdk"); from claude_agent_sdk import ClaudeAgentOptions; from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport; t=SubprocessCLITransport(prompt="contract",options=ClaudeAgentOptions()); assert t._find_bundled_cli() is None; assert t._find_cli()=="/usr/local/bin/claude"; print("Omnigent SDK imports and existing Claude CLI verified")'
-LABEL io.woow.opendesign.base-image="jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:5cf39559f13fc5e49c3564ad4668c8ce64a49b1a27ea2b445b2a701041d60595" \
+LABEL io.woow.opendesign.base-image="jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:d2677bf76f4b44bc4b344d1e254d4da0f33361e3bf01db92762e1deb9ef41454" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       io.woow.opendesign.upstream-revision="89e64d813bb1c7a11519b3f668f011f7017637d7" \
       io.woow.opendesign.artifact-sha256="${ARTIFACT_SHA256}" \

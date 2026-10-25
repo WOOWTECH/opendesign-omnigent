@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 
 
-BASE_IMAGE = 'jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:5cf39559f13fc5e49c3564ad4668c8ce64a49b1a27ea2b445b2a701041d60595'
+BASE_IMAGE = 'jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:d2677bf76f4b44bc4b344d1e254d4da0f33361e3bf01db92762e1deb9ef41454'
 UPSTREAM_REVISION = '89e64d813bb1c7a11519b3f668f011f7017637d7'
 
 
