@@ -65,12 +65,17 @@ const CLI = record({
   titleI18n: { en: 'CLI Terminal', 'zh-CN': 'CLI 终端', 'zh-TW': 'CLI 終端機' },
   launch: '/console/',
 });
+const PASEO = record({
+  id: 'woow-paseo', sourceKind: 'bundled', title: 'Paseo',
+  titleI18n: { en: 'Paseo', 'zh-CN': 'Paseo 设置', 'zh-TW': 'Paseo 設定' },
+  launch: '/paseo/setup/',
+});
 const USER_PLUGIN = record({ id: 'my-plugin', sourceKind: 'user', title: 'My plugin' });
 const BUNDLED_PLUGIN = record({ id: 'bundled-suite', sourceKind: 'bundled', title: 'Bundled suite' });
 // od.launch on a non-bundled plugin is ignored: it stays an ordinary plugin.
 const USER_WITH_LAUNCH = record({ id: 'user-launch', sourceKind: 'user', title: 'User launch', launch: '/x/' });
 
-const PLUGINS = [MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI];
+const PLUGINS = [PASEO, MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI];
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -85,6 +90,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url === `/api/plugins/${CLI.id}`) return jsonResponse(CLI);
+    if (url === `/api/plugins/${PASEO.id}`) return jsonResponse(PASEO);
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: PLUGINS });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [] });
     if (url === '/api/skills') return jsonResponse({ skills: [] });
@@ -106,7 +112,7 @@ async function renderInstalledTab(locale: Locale = 'en', onUsePlugin = vi.fn()) 
   );
   fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
   await waitFor(() => {
-    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(3);
+    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(4);
   });
   return utils;
 }
@@ -124,9 +130,10 @@ describe('built-in launcher plugins on the Plugins page', () => {
       </I18nProvider>,
     );
     await waitFor(() => {
-      expect(cardIds(container).slice(0, 2)).toEqual([
+      expect(cardIds(container).slice(0, 3)).toEqual([
         'plugins-card-woow-cli-terminal',
         'plugins-card-woow-mcp-server',
+        'plugins-card-woow-paseo',
       ]);
     });
     expect(screen.getByTestId('plugins-card-open-woow-cli-terminal').getAttribute('href')).toBe('/console/');
@@ -134,11 +141,12 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(screen.getByTestId('plugins-tab-installed').textContent).toContain('已安裝');
   });
 
-  it('pins both launchers above personal plugins, leaving other bundled plugins out', async () => {
+  it('pins all launchers above personal plugins, leaving other bundled plugins out', async () => {
     const { container } = await renderInstalledTab();
     expect(cardIds(container)).toEqual([
       'plugins-card-woow-cli-terminal',
       'plugins-card-woow-mcp-server',
+      'plugins-card-woow-paseo',
       'plugins-card-my-plugin',
     ]);
     expect(screen.getByTestId('plugins-card-builtin-woow-mcp-server').textContent).toBe('Built-in');
@@ -148,7 +156,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
   it('opens the launch path in a new tab through a plain anchor and offers no uninstall', async () => {
     const onUsePlugin = vi.fn();
     await renderInstalledTab('en', onUsePlugin);
-    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/']]) {
+    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-paseo', '/paseo/setup/']]) {
       const open = screen.getByTestId(`plugins-card-open-${id}`);
       expect(open.tagName).toBe('A');
       expect(open.getAttribute('href')).toBe(href);
@@ -164,18 +172,18 @@ describe('built-in launcher plugins on the Plugins page', () => {
     // The ordinary personal plugin keeps its uninstall menu.
     expect(screen.getByTestId('plugins-card-more-my-plugin')).toBeTruthy();
 
-    fireEvent.click(screen.getByTestId('plugins-card-open-woow-cli-terminal'));
+    fireEvent.click(screen.getByTestId('plugins-card-open-woow-paseo'));
     expect(onUsePlugin).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe('/plugins');
   });
 
-  it('finds launchers through the Plugins page search', async () => {
+  it.each([['terminal', CLI.id], ['paseo', PASEO.id]])('finds %s through the Plugins page search', async (query, id) => {
     const { container } = await renderInstalledTab();
     fireEvent.change(container.querySelector('.plugin-marketplace__search input')!, {
-      target: { value: 'terminal' },
+      target: { value: query },
     });
     await waitFor(() => {
-      expect(cardIds(container)).toEqual(['plugins-card-woow-cli-terminal']);
+      expect(cardIds(container)).toEqual([`plugins-card-${id}`]);
     });
   });
 
@@ -185,17 +193,21 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(within(card).getByText('CLI 終端機')).toBeTruthy();
     expect(screen.getByTestId('plugins-card-builtin-woow-cli-terminal').textContent).toBe('內建');
     expect(screen.getByTestId('plugins-card-open-woow-cli-terminal').textContent).toBe('開啟');
+    const paseoCard = screen.getByTestId('plugins-card-woow-paseo');
+    expect(within(paseoCard).getByText('Paseo 設定')).toBeTruthy();
+    expect(screen.getByTestId('plugins-card-builtin-woow-paseo').textContent).toBe('內建');
+    expect(screen.getByTestId('plugins-card-open-woow-paseo').textContent).toBe('開啟');
   });
 
-  it('gives the launcher detail page an Open link instead of Use', async () => {
+  it.each([CLI, PASEO])('gives $id an Open detail link instead of Use', async (plugin) => {
     render(
       <I18nProvider initial="zh-TW">
-        <PluginDetailView pluginId={CLI.id} />
+        <PluginDetailView pluginId={plugin.id} />
       </I18nProvider>,
     );
     const open = await screen.findByTestId('plugin-detail-open');
     expect(open.tagName).toBe('A');
-    expect(open.getAttribute('href')).toBe('/console/');
+    expect(open.getAttribute('href')).toBe(plugin.manifest.od?.launch?.path);
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('rel')).toBe('noopener noreferrer');
     expect(open.textContent).toBe('開啟');
@@ -209,6 +221,7 @@ describe('launchers stay out of apply/use catalogues', () => {
   it('drops bundled launchers from the visible catalogue the composer and home read', async () => {
     expect(isVisiblePlugin(MCP)).toBe(false);
     expect(isVisiblePlugin(CLI)).toBe(false);
+    expect(isVisiblePlugin(PASEO)).toBe(false);
     expect(isVisiblePlugin(BUNDLED_PLUGIN)).toBe(true);
     expect(isVisiblePlugin(USER_WITH_LAUNCH)).toBe(true);
 
@@ -216,5 +229,6 @@ describe('launchers stay out of apply/use catalogues', () => {
     expect(visible.map((plugin) => plugin.id)).toEqual(['my-plugin', 'bundled-suite']);
     const all = await listPlugins({ includeHidden: true });
     expect(all.map((plugin) => plugin.id)).toContain('woow-cli-terminal');
+    expect(all.map((plugin) => plugin.id)).toContain('woow-paseo');
   });
 });
