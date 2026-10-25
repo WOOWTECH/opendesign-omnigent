@@ -17,7 +17,8 @@ source edits to the base-owned MCP units that this release preserves.
 
 The SDK, native CLI versions, Paseo files, launcher, environment and entrypoint
 are inherited. The build verifies the existing SDK and applies the normal
-branding scripts to the new web output. The former SDK donor/split-layer files
+branding scripts to the new web output. The snapshot-image patch reuses its
+web-only function because the preserved daemon already contains the patch. The former SDK donor/split-layer files
 remain as historical packaging references; this release does not recopy them.
 
 ## Prepare the context

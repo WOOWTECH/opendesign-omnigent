@@ -19,7 +19,7 @@ RUN python3 -B -c 'import hashlib,json,pathlib,sys; raw=pathlib.Path("/usr/local
  && python3 /usr/local/share/woow/patches/zh-tw-locale.py apply /app/apps/web/out /usr/local/share/woow/patches/zh-TW-s2twp.json \
  && python3 /usr/local/share/woow/patches/white-label.py /app/apps/web/out \
  && python3 /usr/local/share/woow/patches/white-label-links.py /app/apps/web/out \
- && python3 /usr/local/share/woow/patches/snapshot-inline-img.py /app \
+ && python3 -B -c 'import runpy; p=runpy.run_path("/usr/local/share/woow/patches/snapshot-inline-img.py"); p["patch"]("/app/apps/web/out", (".js",), "web")' \
  && test "$(id -u)" = 1001 \
  && node --check /app/apps/daemon/dist/cli.js \
  && python3 -B -c 'import pathlib; p=pathlib.Path("/app/apps/daemon/dist/integrations/omnigent/adapter.py"); compile(p.read_text(), str(p), "exec")' \
