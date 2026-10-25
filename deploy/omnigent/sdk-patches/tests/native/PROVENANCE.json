@@ -1,0 +1,52 @@
+{
+  "upstream_repository": "https://github.com/omnigent-ai/omnigent",
+  "upstream_commit": "12b5f67d2529b43eab7366a7288fb89f7587e48b",
+  "upstream_project_version": "0.17.0",
+  "target_runtime_version": "0.16.0 (entire installed SDK, with quota patch applied)",
+  "license": "Apache-2.0",
+  "license_and_notice": "Copied unchanged from the upstream commit; NOTICE contains upstream project-wide attributions.",
+  "tests": [
+    {
+      "file": "test_opencode_native_forwarder.py",
+      "upstream_path": "tests/test_opencode_native_forwarder.py",
+      "upstream_sha256": "24811abdfc081cf3a2b5d08901ab79f9eb0d7d967841c806cce66d6d32f96ec2",
+      "eee5828_base_identical": true,
+      "test_body_sha256": "b03792f3b558e968e0d2d7c838e8bd78f9b00dad11f79fc2cf45c81903bd648c",
+      "vendored_sha256": "765d927de1f04bc7b6ccecad76bdbc954d137db9fcd1b3d1bbd8ffaff7b5ab24",
+      "modifications": [
+        "Apache-2.0 and provenance header",
+        "four quota retry regression tests appended"
+      ],
+      "test_count": 56
+    },
+    {
+      "file": "test_opencode_forwarder_reconnect.py",
+      "upstream_path": "tests/test_opencode_forwarder_reconnect.py",
+      "upstream_sha256": "bdd227a01a7410f7d24ee3b9fc8dc62f024baed3a14ce3e6dae921cfe4618b23",
+      "eee5828_base_identical": true,
+      "test_body_sha256": "bdd227a01a7410f7d24ee3b9fc8dc62f024baed3a14ce3e6dae921cfe4618b23",
+      "vendored_sha256": "33982e169414523b42f446e8ed4a0fa1788f21005ce14d5d4101b54aaf5f8c7c",
+      "modifications": [
+        "Apache-2.0 and provenance header"
+      ],
+      "test_count": 7
+    }
+  ],
+  "expected_test_count": 63,
+  "new_cases": [
+    "test_quota_retry_is_visible_while_turn_remains_stoppable",
+    "test_quota_retry_before_any_assistant_message_is_visible",
+    "test_short_rate_limit_retries_can_recover_without_quota_notice",
+    "test_quota_notice_is_scoped_to_session_and_rearms_after_stop"
+  ],
+  "prior_validation": "63 passed using modified source and separately a captured installed 0.16 forwarder module with local repository dependencies. This is not whole-installed-0.16 verification.",
+  "candidate_validation": "PENDING: main agent runs this isolated suite against the candidate installed 0.16 SDK. No module replacement or source checkout injection is allowed for this acceptance.",
+  "delivery_bundle_validation": {
+    "result": "63 passed in 0.26s",
+    "scope": "New standalone pytest.ini plus both vendored test files; upstream conftest and third-party plugin autoload disabled.",
+    "runtime": "local patched eee5828 source with existing test venv dependencies, NOT candidate whole-installed 0.16 SDK",
+    "pytest": "9.0.3",
+    "pytest_asyncio": "1.4.0",
+    "candidate_acceptance": "pending main-line candidate-container run"
+  }
+}

@@ -1,0 +1,88 @@
+--- a/omnigent/harnesses/opencode_native/forwarder.py
++++ b/omnigent/harnesses/opencode_native/forwarder.py
+@@ -124,6 +124,32 @@
+         while len(self.seen) > _MAX_DEDUPE_KEYS:
+             self.seen.popitem(last=False)
+         return True
++
++
++def _quota_error_code(value: object, depth: int = 0) -> str | None:
++    """Find an explicit provider quota code inside an OpenCode retry error."""
++    if depth > 5:
++        return None
++    if isinstance(value, Mapping):
++        for key in ("type", "code"):
++            if value.get(key) in ("usage_limit_reached", "insufficient_quota"):
++                return str(value[key])
++        for key in ("error", "data", "message", "responseBody"):
++            if code := _quota_error_code(value.get(key), depth + 1):
++                return code
++    elif isinstance(value, str):
++        # Gateways can wrap the provider JSON in a textual exception prefix.
++        decoder = json.JSONDecoder()
++        for index, char in enumerate(value[:16384]):
++            if char != "{":
++                continue
++            try:
++                parsed, _ = decoder.raw_decode(value[index : index + 16384])
++            except ValueError:
++                continue
++            if code := _quota_error_code(parsed, depth + 1):
++                return code
++    return None
+ 
+ 
+ def _int_or_zero(value: object) -> int:
+@@ -218,6 +244,7 @@
+         self._active_message_id: str | None = None
+         self._running_response_id: str | None = None
+         self._question_tasks: dict[str, asyncio.Task[None]] = {}
++        self._quota_notice_sent = False
+ 
+     async def seed_dedupe_from_history(self) -> None:
+         """
+@@ -571,6 +598,7 @@
+         ``reauth_required`` on a ``failed`` edge), which are merged on top.
+         """
+         self.state.turn_active = False
++        self._quota_notice_sent = False
+         # Reasoning deltas are per-turn; drop the per-part offsets so the map
+         # can't grow across a long-lived session (the next turn's reasoning
+         # parts carry fresh ids anyway).
+@@ -817,11 +845,35 @@
+         )
+ 
+     async def _on_session_status(self, event: OpenCodeEvent) -> None:
+-        """Handle ``session.status`` — surface the running edge."""
++        """Mirror busy status and explain explicit quota retries without aborting them."""
+         status = event.properties.get("status")
+         status_type = status.get("type") if isinstance(status, Mapping) else status
+         if status_type == "busy":
+             await self._begin_turn_if_needed()
++        elif status_type == "retry" and not self._quota_notice_sent and _quota_error_code(status):
++            response_id = self._response_id(self._running_response_id or self._active_message_id)
++            response = await self._post_event(
++                _EXTERNAL_ITEM,
++                {
++                    "item_type": "message",
++                    "item_data": {
++                        "role": "assistant",
++                        "agent": _AGENT_NAME,
++                        "content": [
++                            {
++                                "type": "output_text",
++                                "text": (
++                                    "The provider reports an exhausted usage quota. OpenCode is "
++                                    "retrying. Use Stop to end this turn, then select another "
++                                    "model or wait for the quota to reset."
++                                ),
++                            }
++                        ],
++                    },
++                    "response_id": response_id,
++                },
++            )
++            self._quota_notice_sent = response is not None and response.is_success
+ 
+     async def _on_session_idle(self, event: OpenCodeEvent) -> None:
+         """Handle ``session.idle`` — finalize text, post usage, end the turn."""

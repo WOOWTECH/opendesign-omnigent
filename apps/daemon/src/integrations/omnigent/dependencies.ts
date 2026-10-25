@@ -63,7 +63,7 @@ async function locate(name: string, env: NodeJS.ProcessEnv): Promise<string | un
 async function probe(python: string, env: NodeJS.ProcessEnv, run: DependencyCommandRunner): Promise<boolean> {
   if (!await executable(python)) return false;
   try {
-    const result = await run(python, ['-I', '-c', SDK_PROBE], { env, timeoutMs: 5_000 });
+    const result = await run(python, ['-I', '-B', '-c', SDK_PROBE], { env, timeoutMs: 5_000 });
     return result.code === 0 && /^\d+\.\d+\.\d+(?:[^\s]*)?$/.test(result.stdout.trim());
   } catch { return false; }
 }
@@ -82,31 +82,66 @@ async function managed(python: string, deps: string): Promise<boolean> {
   catch { return false; }
 }
 
-/** Verify the exact private SDK on every reuse; only the reviewed baseline may be patched. */
-async function ensureManagedSdkPatch(python: string, deps: string, env: NodeJS.ProcessEnv, run: DependencyCommandRunner): Promise<void> {
+interface SdkPatchTarget { sdkRelativePath: string; baseSha256: string; replacementSha256: string; }
+const PATCH_TARGETS: Record<string, string> = {
+  'opencode-host-model-options.patch': 'host/connect.py',
+  'opencode-quota-error.patch': 'harnesses/opencode_native/forwarder.py',
+};
+
+/** External SDKs are read-only; only the daemon's private install can be patched. */
+async function ensureSdkPatch(python: string, env: NodeJS.ProcessEnv, run: DependencyCommandRunner, deps?: string): Promise<void> {
   try {
-    const root = await realpath(deps);
-    if (root !== path.join(await realpath(path.dirname(deps)), 'deps')) throw new Error();
     const sdkRoot = await realpath(path.resolve(path.dirname(python), '..'));
-    if (!inside(root, sdkRoot)) throw new Error();
+    if (deps) {
+      const root = await realpath(deps);
+      if (root !== path.join(await realpath(path.dirname(deps)), 'deps') || !inside(root, sdkRoot)) throw new Error();
+    }
     const manifest = JSON.parse(await readFile(path.join(SDK_PATCH_ASSETS, 'manifest.json'), 'utf8'));
-    if (manifest.sdkVersion !== OMNIGENT_DEPENDENCY_VERSIONS.omnigent || manifest.sdkRelativePath !== 'host/connect.py'
-      || manifest.patch !== 'opencode-host-model-options.patch' || !/^[a-f0-9]{64}$/.test(manifest.baseSha256)
-      || !/^[a-f0-9]{64}$/.test(manifest.replacementSha256)) throw new Error();
+    if (manifest.schemaVersion !== 2 || manifest.sdkVersion !== OMNIGENT_DEPENDENCY_VERSIONS.omnigent
+      || !Array.isArray(manifest.patches) || manifest.patches.length !== Object.keys(PATCH_TARGETS).length) throw new Error();
+    const names = new Set<string>();
+    const files: SdkPatchTarget[] = [];
+    for (const entry of manifest.patches) {
+      if (!Object.hasOwn(PATCH_TARGETS, entry.patch) || names.has(entry.patch)
+        || !/^[a-f0-9]{64}$/.test(entry.patchSha256) || !Array.isArray(entry.files) || entry.files.length !== 1) throw new Error();
+      names.add(entry.patch);
+      const file = entry.files[0];
+      if (file.sdkRelativePath !== PATCH_TARGETS[entry.patch] || !/^[a-f0-9]{64}$/.test(file.baseSha256)
+        || !/^[a-f0-9]{64}$/.test(file.replacementSha256) || file.baseSha256 === file.replacementSha256) throw new Error();
+      const patchPath = path.join(SDK_PATCH_ASSETS, entry.patch);
+      if (!(await lstat(patchPath)).isFile()
+        || createHash('sha256').update(await readFile(patchPath)).digest('hex') !== entry.patchSha256) throw new Error();
+      files.push(file);
+    }
     const info = await run(python, ['-I', '-B', '-c', SDK_PATCH_PROBE], { env, timeoutMs: 5_000 });
     if (info.code !== 0) throw new Error();
     const sdk = JSON.parse(info.stdout);
     if (sdk.version !== OMNIGENT_DEPENDENCY_VERSIONS.omnigent || typeof sdk.packageRoot !== 'string'
       || !path.isAbsolute(sdk.packageRoot) || !inside(sdkRoot, await realpath(sdk.packageRoot))) throw new Error();
-    const target = path.join(sdk.packageRoot, 'host', 'connect.py');
-    if (!(await lstat(target)).isFile() || !inside(sdkRoot, await realpath(target))) throw new Error();
-    const hash = async () => createHash('sha256').update(await readFile(target)).digest('hex');
-    const before = await hash();
-    if (before === manifest.replacementSha256) return;
-    if (before !== manifest.baseSha256) throw new Error();
-    const patched = await run(python, ['-I', '-B', path.join(SDK_PATCH_ASSETS, 'apply.py'), target,
-      path.join(SDK_PATCH_ASSETS, manifest.patch)], { env, cwd: deps, timeoutMs: 10_000 });
-    if (patched.code !== 0 || await hash() !== manifest.replacementSha256) throw new Error();
+    const targets: { path: string; expected: string }[] = [];
+    let needsPatch = false;
+    for (const file of files) {
+      let target = sdk.packageRoot;
+      for (const part of file.sdkRelativePath.split('/')) {
+        target = path.join(target, part);
+        if ((await lstat(target)).isSymbolicLink()) throw new Error();
+      }
+      if (!(await lstat(target)).isFile() || !inside(sdkRoot, await realpath(target))) throw new Error();
+      const before = createHash('sha256').update(await readFile(target)).digest('hex');
+      if (before !== file.replacementSha256) {
+        if (!deps || before !== file.baseSha256) throw new Error();
+        needsPatch = true;
+      }
+      targets.push({ path: target, expected: file.replacementSha256 });
+    }
+    if (!needsPatch) return;
+    if (!deps) throw new Error();
+    const patched = await run(python, ['-I', '-B', path.join(SDK_PATCH_ASSETS, 'apply.py'), sdk.packageRoot,
+      path.join(SDK_PATCH_ASSETS, 'manifest.json')], { env, cwd: deps, timeoutMs: 10_000 });
+    if (patched.code !== 0) throw new Error();
+    for (const target of targets) {
+      if (createHash('sha256').update(await readFile(target.path)).digest('hex') !== target.expected) throw new Error();
+    }
   } catch {
     // Neither imported paths, package source nor subprocess diagnostics cross the service boundary.
     throw new Error('Private Omnigent SDK patch verification failed.');
@@ -132,9 +167,14 @@ export async function ensureOmnigentDependencies(options: OmnigentDependencyOpti
   if (options.update && await probe(managedPython, runtimeEnv, run)) candidates.unshift(managedPython);
   for (const python of [...new Set(candidates.filter((value): value is string => Boolean(value)))]) {
     if (!await probe(python, runtimeEnv, run)) continue;
-    if (!await managed(python, deps)) return { python, env: runtimeEnv };
+    if (!await managed(python, deps)) {
+      try {
+        await ensureSdkPatch(python, runtimeEnv, run);
+        return { python, env: runtimeEnv };
+      } catch { continue; }
+    }
     if (!options.update) {
-      await ensureManagedSdkPatch(python, deps, runtimeEnv, run);
+      await ensureSdkPatch(python, runtimeEnv, run, deps);
       return { python, env: runtimeEnv };
     }
     break;
@@ -178,6 +218,6 @@ export async function ensureOmnigentDependencies(options: OmnigentDependencyOpti
   args.push(`omnigent==${OMNIGENT_DEPENDENCY_VERSIONS.omnigent}`);
   await checkedRun(uv, args, 600_000, 'Private Omnigent installation failed. Check package registry access and retry.');
   if (!await probe(managedPython, runtimeEnv, run)) throw new Error('The private Omnigent SDK is unavailable after installation.');
-  await ensureManagedSdkPatch(managedPython, deps, runtimeEnv, run);
+  await ensureSdkPatch(managedPython, runtimeEnv, run, deps);
   return { python: managedPython, env: runtimeEnv };
 }

@@ -3,7 +3,7 @@
   "specVersion": "1.0.0",
   "name": "woow-omnigent",
   "title": "Omnigent",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Connect Omnigent, choose an installed engine and model, and manage the connection.",
   "description_i18n": {
     "en": "Connect Omnigent, choose an installed engine and model, and manage the connection.",

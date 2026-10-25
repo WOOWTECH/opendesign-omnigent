@@ -1,5 +1,5 @@
 {
-  "baseImage": "jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:d2677bf76f4b44bc4b344d1e254d4da0f33361e3bf01db92762e1deb9ef41454",
+  "baseImage": "jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b",
   "baseDaemonOverrides": {
     "mcp-config.js": "86a74f5b963e375f297025ff3256a4f14ac1b693240bac2a68d7cfddb7d13c24",
     "mcp-routes.js": "7353fb9667d246abfc74356c89969179ac9735d530890109ff053096d4e0cea8",
@@ -7,6 +7,13 @@
     "routes/project/index.js": "7b0cf83d1d414568a0ec8bcd2c6f15676037bb15e1c2adbbadb9253b9b3564e6"
   },
   "daemonOverlayFiles": [
-    "integrations/omnigent/adapter.py"
+    "integrations/omnigent/dependencies.js",
+    "integrations/omnigent/dependencies.js.map",
+    "integrations/omnigent/build-assets.js",
+    "integrations/omnigent/build-assets.js.map",
+    "integrations/omnigent/sdk-patches/apply.py",
+    "integrations/omnigent/sdk-patches/manifest.json",
+    "integrations/omnigent/sdk-patches/opencode-host-model-options.patch",
+    "integrations/omnigent/sdk-patches/opencode-quota-error.patch"
   ]
 }

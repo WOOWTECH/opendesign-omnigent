@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 
 
-BASE_IMAGE = 'jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:d2677bf76f4b44bc4b344d1e254d4da0f33361e3bf01db92762e1deb9ef41454'
+BASE_IMAGE = 'jcr-prod.woowtech.io/woow-paas-docker-local/open-design@sha256:daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b'
 UPSTREAM_REVISION = '89e64d813bb1c7a11519b3f668f011f7017637d7'
 
 
@@ -55,17 +55,19 @@ def main():
 
     artifacts = {
         'daemon-dist': root / 'apps/daemon/dist',
-        'web-out': root / 'apps/web/out',
         'bundled-omnigent': root / 'plugins/_official/woow/woow-omnigent',
     }
     required = {
         'daemon-dist': ['cli.js', 'integrations/omnigent/service.js',
                         'integrations/omnigent/dependencies.js',
+                         'integrations/omnigent/dependencies.js.map',
+                         'integrations/omnigent/build-assets.js',
+                         'integrations/omnigent/build-assets.js.map',
                         'integrations/omnigent/adapter.py',
                         'integrations/omnigent/sdk-patches/apply.py',
                         'integrations/omnigent/sdk-patches/manifest.json',
-                        'integrations/omnigent/sdk-patches/opencode-host-model-options.patch'],
-        'web-out': ['index.html'],
+                        'integrations/omnigent/sdk-patches/opencode-host-model-options.patch',
+                         'integrations/omnigent/sdk-patches/opencode-quota-error.patch'],
         'bundled-omnigent': ['open-design.json'],
     }
     entries = {}
@@ -91,12 +93,15 @@ def main():
 
     sdk_prefix = integration_prefix + 'sdk-patches/'
     sdk_manifest = json.loads(entries[sdk_prefix + 'manifest.json'])
-    if (sdk_manifest.get('sdkVersion') != '0.16.0'
-            or sdk_manifest.get('patch') != 'opencode-host-model-options.patch'):
+    expected_patches = {'opencode-host-model-options.patch', 'opencode-quota-error.patch'}
+    patches = sdk_manifest.get('patches', [])
+    if (sdk_manifest.get('schemaVersion') != 2 or sdk_manifest.get('sdkVersion') != '0.16.0'
+            or len(patches) != 2 or {p.get('patch') for p in patches} != expected_patches):
         raise ValueError('Unexpected SDK patch contract; review deployment packaging.')
-    # build-assets.ts copies these canonical assets. Do not ship a stale dist
-    # copy after a patch change.
-    for name in ('apply.py', 'manifest.json', 'opencode-host-model-options.patch'):
+    for patch in patches:
+        if sha256(entries[sdk_prefix + patch['patch']]) != patch['patchSha256']:
+            raise ValueError('SDK patch checksum mismatch.')
+    for name in ('apply.py', 'manifest.json', *sorted(expected_patches)):
         canonical = root / 'deploy/omnigent/sdk-patches' / name
         if entries[sdk_prefix + name] != canonical.read_bytes():
             raise ValueError(f'Stale daemon SDK patch asset: {name}. Rebuild daemon.')
@@ -116,29 +121,32 @@ def main():
     # Base-owned MCP and branding units must not hide a future source edit.
     protected_sources = ['apps/daemon/src/' + name.removesuffix('.js') + '.ts'
                          for name in overlay['baseDaemonOverrides']]
-    changed = git('diff', '--name-only', 'f95a85bcd534c3b981b0a9a494b0c92f9dca480d', revision,
+    changed = git('diff', '--name-only', 'b3270069b93548bbfced8cb17fa90039fd88422a', revision,
                   '--', *protected_sources)
     if changed:
         raise ValueError('Protected source changed; integrate the base overrides before packaging.')
     for name in ('base-overlay.json', 'verify-overlay.py'):
         entries[name] = (root / 'deploy/omnigent' / name).read_bytes()
         modes[name] = 0o644
-    sdk_runtime = json.loads((root / 'deploy/omnigent/sdk-runtime/manifest.json').read_text())
+    if git('diff', '--name-only', 'b3270069b93548bbfced8cb17fa90039fd88422a', revision,
+           '--', 'apps/web', 'packages/contracts'):
+        raise ValueError('Host-only release cannot include web or contracts source changes.')
     manifest = {
         'schemaVersion': 2,
         'sourceRevision': revision,
         'upstreamRevision': UPSTREAM_REVISION,
         'baseImage': BASE_IMAGE,
-        'baseSourceRevision': 'f95a85bcd534c3b981b0a9a494b0c92f9dca480d',
-        'runtimeDependencyClosure': 'Pinned current Paseo/Omnigent base; preserved MCP overrides and reviewed daemon overlay',
+        'baseSourceRevision': 'b3270069b93548bbfced8cb17fa90039fd88422a',
+        'runtimeDependencyClosure': 'Inherited current complete Paseo/MCP/Omnigent image; reviewed host SDK patches only',
+        'webRuntime': 'Inherited unchanged from base image; no web assets or branding rebuild',
         'daemonOverlay': overlay,
-        'sdkRuntime': sdk_runtime,
-        'contractsRuntime': 'Inherited; release assumes source changes are type-only',
+        'sdkRuntime': {'omnigent': '0.16.0', 'dependencies': 'Inherited unchanged from base image'},
+        'contractsRuntime': 'Inherited unchanged; source equality guarded against baseSourceRevision',
         'lockfileSha256': sha256((root / 'pnpm-lock.yaml').read_bytes()),
         'bundledPlugin': {'name': plugin['name'], 'version': plugin['version']},
         'sdkPatches': sdk_manifest,
         'hostKitAssets': sorted(host_assets),
-        'fileHashStage': 'Build inputs before the inherited PaaS branding patches run',
+        'fileHashStage': 'Exact host overlay inputs; web and existing branding inherited unchanged',
         'files': {name: sha256(data) for name, data in sorted(entries.items())},
         'fileModes': {name: format(mode, '04o') for name, mode in sorted(modes.items())},
     }

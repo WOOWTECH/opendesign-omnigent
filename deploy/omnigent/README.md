@@ -1,30 +1,35 @@
 # Omnigent derivative packaging
 
-## v0.1.5 current-base overlay
+## v0.1.6 host SDK overlay
 
-During acceptance the target advanced from chart 0.5.7/revision29 to chart
-0.5.8/revision30 with a newer Paseo/Omnigent image. The deployment preflight
-rejected the stale baseline. The current base is now pinned in Dockerfile and
-`base-overlay.json`; no chart or service values are reverted.
+This release fixes an OpenCode retry that otherwise leaves an exhausted provider
+quota invisible in the conversation. Explicit `usage_limit_reached` and
+`insufficient_quota` retry errors produce one durable notice per turn. The user
+can Stop and choose another model; temporary rate limits retain native retries.
 
-Image file hashes showed the same web output and three native MCP daemon
-additions/updates, plus the Paseo launcher. Preserve that complete image and
-replace only the reviewed Omnigent adapter, rebuilt web output and Omnigent
-manifest. `verify-overlay.py` checks every unchanged compiled daemon file and
-the exact base MCP hashes and the inherited snapshot-image route patch. A future additional backend change fails the build
-until the overlay contract is deliberately extended. The packager also refuses
-source edits to the base-owned MCP units that this release preserves.
+The complete current Paseo/MCP image is pinned to digest `daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b`
+in Dockerfile and `base-overlay.json`. The overlay updates only the dependency
+installer, reviewed SDK patch assets and the Omnigent launcher version. The
+existing web output, branding, Paseo runtime, MCP additions, native CLI versions,
+environment and entrypoint are inherited. Chart and service configuration are
+handled separately during the guarded single-service deployment.
 
-The SDK, native CLI versions, Paseo files, launcher, environment and entrypoint
-are inherited. The build verifies the existing SDK and applies the normal
-branding scripts to the new web output. The snapshot-image patch reuses its
-web-only function because the preserved daemon already contains the patch. The former SDK donor/split-layer files
-remain as historical packaging references; this release does not recopy them.
+`verify-overlay.py` checks every unchanged compiled daemon file and the exact
+base MCP hashes. The packager rejects web/contracts source changes relative to
+`b3270069b93548bbfced8cb17fa90039fd88422a` and rejects unreviewed daemon changes.
+This host-only contract must be deliberately updated before a frontend release.
+
+The SDK remains version 0.16.0. A shared manifest pins the original and result
+hashes of `host/connect.py` and `harnesses/opencode_native/forwarder.py`.
+Image builds apply both patches before switching back to the application user.
+Private installs verify or apply the same patches on installation, update and
+reuse. External SDK installations are inspected without modification; an
+incompatible external SDK falls back to the integration's private installation.
 
 ## Prepare the context
 
 Finish the daemon host integration, commit all source/deploy changes, and build
-the daemon and web from that final revision using their package-scoped commands.
+the daemon from that final revision using its package-scoped command.
 The packager consumes existing outputs and does not prove their build provenance;
 retain the build logs with the packaging receipt. It refuses dirty source,
 missing host assets, stale SDK patch copies, symlinks and special files.
@@ -39,7 +44,7 @@ python3 -B deploy/omnigent/build-context.py \
 ```
 
 The JSON receipt includes source revision, base digest, manifest checksum,
-archive checksum, size and file count. The archive contains a complete file
+archive checksum, size and file count. The archive contains a complete overlay
 inventory with SHA-256 and modes, source lockfile checksum, plugin version, SDK
 patch contract and host-kit asset names. `ARTIFACT_SHA256` means the checksum of
 `manifest.json`; `archiveSha256` is the separate tar.gz checksum.
@@ -103,11 +108,17 @@ using that separate action.
 
 ## Verification steps
 
-- Build final daemon assets after the private supervisor and SDK changes land.
-- Verify SDK reuse in a fresh Alpine container, then host lifecycle,
+- Build final daemon assets after the dependency installer and SDK changes land.
+- Run the [installed SDK regression suite](sdk-patches/tests/native/README.md)
+  against the entire SDK in a disposable candidate container. The unpatched
+  base is the red control; all 63 cases must pass in the candidate.
+- Verify SDK reuse in a fresh container, then host lifecycle,
   GUI connection and model conversations. A successful image build verifies
   imports and native CLI resolution; it does not prove server login or replies.
 - Build/push the candidate and retain its immutable digest.
+- Trigger an explicitly exhausted model through the real GUI. Verify the quota
+  notice appears, survives reload, and Stop ends the turn; then obtain a reply
+  from an available model. A visible model catalog alone does not prove quota.
 - In the actual tenant, test the native launcher, fresh connection form,
   disconnect, disable, re-enable and restart persistence. Check the original
   MCP Server and CLI Terminal launchers as well.
