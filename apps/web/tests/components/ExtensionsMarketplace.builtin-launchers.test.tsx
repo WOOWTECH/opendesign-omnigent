@@ -90,6 +90,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url === `/api/plugins/${CLI.id}`) return jsonResponse(CLI);
+    if (url === `/api/plugins/${MCP.id}`) return jsonResponse(MCP);
     if (url === `/api/plugins/${PASEO.id}`) return jsonResponse(PASEO);
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: PLUGINS });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [] });
@@ -159,6 +160,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
     for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-paseo', '/paseo/setup/']]) {
       const open = screen.getByTestId(`plugins-card-open-${id}`);
       expect(open.tagName).toBe('A');
+      expect(open.classList.contains('plugin-launcher-action')).toBe(true);
       expect(open.getAttribute('href')).toBe(href);
       expect(open.getAttribute('target')).toBe('_blank');
       expect(open.getAttribute('rel')).toBe('noopener noreferrer');
@@ -199,7 +201,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(screen.getByTestId('plugins-card-open-woow-paseo').textContent).toBe('開啟');
   });
 
-  it.each([CLI, PASEO])('gives $id an Open detail link instead of Use', async (plugin) => {
+  it.each([CLI, MCP, PASEO])('gives $id an Open detail link instead of Use', async (plugin) => {
     render(
       <I18nProvider initial="zh-TW">
         <PluginDetailView pluginId={plugin.id} />
@@ -207,6 +209,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
     );
     const open = await screen.findByTestId('plugin-detail-open');
     expect(open.tagName).toBe('A');
+    expect(open.classList.contains('plugin-launcher-action')).toBe(true);
     expect(open.getAttribute('href')).toBe(plugin.manifest.od?.launch?.path);
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('rel')).toBe('noopener noreferrer');

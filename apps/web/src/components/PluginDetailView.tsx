@@ -518,7 +518,7 @@ export function PluginDetailView(props: Props) {
           // Real root-absolute anchor so the Home Assistant shell can add its
           // ingress prefix; never a computed URL or window.open.
           <a
-            className="plugin-marketplace__row-action"
+            className="plugin-marketplace__row-action plugin-launcher-action"
             href={launchPath}
             target="_blank"
             rel="noopener noreferrer"
