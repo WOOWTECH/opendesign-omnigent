@@ -8,6 +8,7 @@ export interface OmnigentOnboarding { projectId: string; conversationId: string;
 export interface OmnigentOperation { id: string; action: OmnigentAction; phase: string; startedAt: string; finishedAt?: string; issue?: OmnigentIssue; }
 export interface OmnigentIntegrationStatus {
   installed: boolean; enabled: boolean; phase: string; server: string | null; loginConfirmed: boolean;
+  installationSource?: 'bundled' | 'user';
   host: { id?: string | null; name?: string | null; connected: boolean; manager?: string; };
   installedEngines: string[]; engines: Record<string, OmnigentEngine>; verification: Record<string, OmnigentReceipt>;
   modules?: Array<{ key: string; name: string }>;

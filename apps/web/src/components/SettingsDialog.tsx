@@ -232,6 +232,7 @@ export type SettingsSection =
   | 'orbit'
   | 'routines'
   | 'integrations'
+  | 'omnigent'
   | 'mcpClient'
   | 'language'
   | 'appearance'
@@ -3904,6 +3905,7 @@ export function SettingsDialog({
       subtitle: t('routines.subtitle'),
     },
     integrations: { title: t('settings.mcpServerTitle'), subtitle: t('settings.mcpServerHint') },
+    omnigent: { title: 'Omnigent', subtitle: t('omnigent.description') },
     mcpClient: { title: t('settings.externalMcpTitle'), subtitle: t('settings.externalMcpHint') },
     language: { title: t('settings.language'), subtitle: t('settings.languageHint') },
     // The theme setting is gone (the app ships light-only), so `appearance` has
@@ -4435,6 +4437,18 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.mcpServerTitle')}</strong>
                 <small>{t('settings.mcpServerHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'omnigent' ? ' active' : ''}`}
+              onClick={() => setActiveSection('omnigent')}
+              data-testid="settings-nav-omnigent"
+            >
+              <Icon name="link" size={18} />
+              <span>
+                <strong>Omnigent</strong>
+                <small>{t('omnigent.description')}</small>
               </span>
             </button>
             <button
@@ -5890,10 +5904,11 @@ export function SettingsDialog({
               }}
             />
           ) : null}
-          {activeSection === 'integrations' ? <>
+          {activeSection === 'omnigent' ? (
             <OmnigentIntegrationSection onOpenAgentSettings={() => setActiveSection('execution')} />
-            <IntegrationsSection />
-          </> : null}
+          ) : null}
+
+          {activeSection === 'integrations' ? <IntegrationsSection /> : null}
 
           {activeSection === 'mcpClient' ? <McpClientSection surface="settings" /> : null}
 

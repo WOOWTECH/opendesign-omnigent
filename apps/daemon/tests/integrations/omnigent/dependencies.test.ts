@@ -1,15 +1,28 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureOmnigentDependencies, type DependencyCommandRunner } from '../../../src/integrations/omnigent/dependencies.js';
 
+const patchFixture = vi.hoisted(() => ({ original: 'original SDK fixture\n', patched: 'patched SDK fixture\n' }));
 // The production image path is simulated so these tests also run on developer machines without that image.
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>();
+  const { createHash } = await import('node:crypto');
   return { ...fs,
     access: async (...args: Parameters<typeof fs.access>) => args[0] === '/opt/omnigent/venv/bin/python' ? undefined : fs.access(...args),
     stat: async (...args: Parameters<typeof fs.stat>) => args[0] === '/opt/omnigent/venv/bin/python' ? { isFile: () => true } : fs.stat(...args),
+    // Exercise hash validation with small fixtures; the public SDK source is not vendored into tests.
+    readFile: async (...args: Parameters<typeof fs.readFile>) => {
+      const contents = await fs.readFile(...args);
+      if (!String(args[0]).endsWith('/sdk-patches/manifest.json')) return contents;
+      const manifest = JSON.parse(String(contents));
+      manifest.baseSha256 = createHash('sha256').update(patchFixture.original).digest('hex');
+      manifest.replacementSha256 = createHash('sha256').update(patchFixture.patched).digest('hex');
+      const result = JSON.stringify(manifest);
+      return typeof contents === 'string' ? result : Buffer.from(result);
+    },
   };
 });
 
@@ -18,6 +31,10 @@ describe('private Omnigent dependencies', () => {
   let stateDir: string;
   let env: NodeJS.ProcessEnv;
   let installed: Set<string>;
+  let sdkRoot: string;
+  let sdkPackage: string;
+  let sdkTarget: string;
+  let sdkVersion: string;
   let run: ReturnType<typeof vi.fn<DependencyCommandRunner>>;
   const imagePython = '/opt/omnigent/venv/bin/python';
   const executable = async (file: string) => {
@@ -29,12 +46,25 @@ describe('private Omnigent dependencies', () => {
     root = await mkdtemp(path.join(tmpdir(), 'od-omnigent-deps-'));
     stateDir = path.join(root, 'integration');
     env = { PATH: path.join(root, 'system-bin'), HOME: root };
+    sdkRoot = path.join(stateDir, 'deps', 'uv', 'tools', 'omnigent');
+    sdkPackage = path.join(sdkRoot, 'lib', 'python3.12', 'site-packages', 'omnigent');
+    sdkTarget = path.join(sdkPackage, 'host', 'connect.py');
+    sdkVersion = '0.16.0';
     installed = new Set();
     run = vi.fn<DependencyCommandRunner>(async (command, args) => {
+      if (args.includes('-c') && args.some(arg => arg.includes('packageRoot'))) return { code: 0, stdout: JSON.stringify({ version: sdkVersion, packageRoot: sdkPackage }) };
       if (args.includes('-c')) return { code: installed.has(command) ? 0 : 1, stdout: installed.has(command) ? '0.16.0\n' : '' };
+      if (args.some(arg => arg.endsWith('/sdk-patches/apply.py'))) {
+        await writeFile(sdkTarget, patchFixture.patched);
+        return { code: 0, stdout: 'SDK_PATCH_APPLIED\n' };
+      }
       if (args[0] === '--version') return { code: 0, stdout: 'uv 0.12.10\n' };
       if (args.includes('uv==0.12.10')) await executable(path.join(stateDir, 'deps', 'bootstrap', 'bin', 'uv'));
-      if (args.includes('omnigent==0.16.0')) installed.add(await executable(path.join(stateDir, 'deps', 'uv', 'tools', 'omnigent', 'bin', 'python')));
+      if (args.includes('omnigent==0.16.0')) {
+        installed.add(await executable(path.join(sdkRoot, 'bin', 'python')));
+        await mkdir(path.dirname(sdkTarget), { recursive: true });
+        await writeFile(sdkTarget, patchFixture.original);
+      }
       return { code: 0, stdout: '' };
     });
   });
@@ -83,6 +113,10 @@ describe('private Omnigent dependencies', () => {
     expect(install[1]).toEqual(['tool', 'install', '--python', '3.12', 'omnigent==0.16.0']);
     expect(install[2].env).toMatchObject({ UV_TOOL_DIR: path.join(deps, 'uv', 'tools'), UV_TOOL_BIN_DIR: path.join(deps, 'bin'), UV_PYTHON_INSTALL_DIR: path.join(deps, 'python'), UV_CACHE_DIR: path.join(deps, 'uv-cache') });
     expect(run.mock.calls.some(([, args]) => args.some(arg => /^(claude|codex|pi|opencode)(==|$)/.test(arg)))).toBe(false);
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.patched);
+    const patch = run.mock.calls.find(([, args]) => args.some(arg => arg.endsWith('/sdk-patches/apply.py')))!;
+    expect(patch[0]).toBe(result.python);
+    expect(patch[1]).toEqual(['-I', '-B', expect.stringMatching(/\/sdk-patches\/apply\.py$/), sdkTarget, expect.stringMatching(/\/sdk-patches\/opencode-host-model-options\.patch$/)]);
   });
   it('reuses pinned uv from PATH and does not invoke pip', async () => {
     const uv = await executable(path.join(env.PATH!, 'uv'));
@@ -106,6 +140,82 @@ describe('private Omnigent dependencies', () => {
     expect((await ensureOmnigentDependencies({ stateDir, env, run, update: true })).python).toBe(python);
     expect(run.mock.calls.find(([, args]) => args.includes('omnigent==0.16.0'))?.[1]).toContain('--force');
     expect(run.mock.calls.some(([command, args]) => command === imagePython && !args.includes('-c'))).toBe(false);
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.patched);
+  });
+  it('patches a previously installed private SDK on reuse and verifies it again without repatching', async () => {
+    const python = await executable(path.join(sdkRoot, 'bin', 'python'));
+    installed.add(python);
+    await mkdir(path.dirname(sdkTarget), { recursive: true });
+    await writeFile(sdkTarget, patchFixture.original);
+    expect((await ensureOmnigentDependencies({ stateDir, env, run })).python).toBe(python);
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.patched);
+    run.mockClear();
+    expect((await ensureOmnigentDependencies({ stateDir, env, run })).python).toBe(python);
+    expect(run.mock.calls.some(([, args]) => args.some(arg => arg.includes('packageRoot')))).toBe(true);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
+    await writeFile(sdkTarget, 'unknown updated SDK source');
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(sdkTarget, 'utf8')).toBe('unknown updated SDK source');
+  });
+  it('rejects a different managed SDK version before modifying its source', async () => {
+    installed.add(await executable(path.join(sdkRoot, 'bin', 'python')));
+    await mkdir(path.dirname(sdkTarget), { recursive: true });
+    await writeFile(sdkTarget, patchFixture.original); sdkVersion = '0.17.0';
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.original);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
+  });
+  it('rejects an unknown source from a fresh pinned installation without invoking the patch installer', async () => {
+    await executable(path.join(env.PATH!, 'uv'));
+    const base = run.getMockImplementation()!;
+    run.mockImplementation(async (command, args, options) => {
+      const result = await base(command, args, options);
+      if (args.includes('omnigent==0.16.0')) await writeFile(sdkTarget, 'unknown package source');
+      return result;
+    });
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(sdkTarget, 'utf8')).toBe('unknown package source');
+    expect(run.mock.calls.some(([, args]) => args.some(arg => arg.endsWith('/sdk-patches/apply.py')))).toBe(false);
+  });
+  it.each(['exit', 'throw', 'unchanged'] as const)('fails closed with a fixed diagnostic when the SDK patch runner returns %s', async failure => {
+    await executable(path.join(env.PATH!, 'uv'));
+    const base = run.getMockImplementation()!;
+    run.mockImplementation(async (command, args, options) => {
+      if (!args.some(arg => arg.endsWith('/sdk-patches/apply.py'))) return base(command, args, options);
+      if (failure === 'throw') throw new Error('private runner detail');
+      return { code: failure === 'exit' ? 1 : 0, stdout: 'private runner detail' };
+    });
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow(/^Private Omnigent SDK patch verification failed\.$/);
+    expect(createHash('sha256').update(await readFile(sdkTarget)).digest('hex')).toBe(createHash('sha256').update(patchFixture.original).digest('hex'));
+  });
+  it('refuses to patch an SDK imported outside the private environment', async () => {
+    installed.add(await executable(path.join(sdkRoot, 'bin', 'python')));
+    sdkPackage = path.join(root, 'external', 'omnigent'); sdkTarget = path.join(sdkPackage, 'host', 'connect.py');
+    await mkdir(path.dirname(sdkTarget), { recursive: true }); await writeFile(sdkTarget, patchFixture.original);
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.original);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
+  });
+  it.each(['file', 'directory'] as const)('refuses a reused private SDK target whose %s is a symlink outside its environment', async kind => {
+    installed.add(await executable(path.join(sdkRoot, 'bin', 'python')));
+    const externalDir = path.join(root, 'external'); await mkdir(externalDir);
+    const external = path.join(externalDir, 'connect.py'); await writeFile(external, patchFixture.original);
+    await mkdir(sdkPackage, { recursive: true });
+    if (kind === 'directory') await symlink(externalDir, path.dirname(sdkTarget));
+    else { await mkdir(path.dirname(sdkTarget)); await symlink(external, sdkTarget); }
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(external, 'utf8')).toBe(patchFixture.original);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
+  });
+  it('rejects a populated dependency root symlink before patching a reused SDK', async () => {
+    await mkdir(stateDir, { recursive: true });
+    const external = path.join(root, 'external'); await mkdir(external);
+    await symlink(external, path.join(stateDir, 'deps'));
+    installed.add(await executable(path.join(sdkRoot, 'bin', 'python')));
+    await mkdir(path.dirname(sdkTarget), { recursive: true }); await writeFile(sdkTarget, patchFixture.original);
+    await expect(ensureOmnigentDependencies({ stateDir, env, run })).rejects.toThrow('Private Omnigent SDK patch verification failed.');
+    expect(await readFile(sdkTarget, 'utf8')).toBe(patchFixture.original);
+    expect(run.mock.calls.every(([, args]) => args.includes('-c'))).toBe(true);
   });
   it('refuses a dependency directory that redirects writes outside daemon state', async () => {
     await mkdir(stateDir, { recursive: true });

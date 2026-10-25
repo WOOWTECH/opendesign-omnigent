@@ -2,13 +2,14 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OmnigentIntegrationService, normalizeOmnigentServer, type OmnigentServiceOptions } from '../src/integrations/omnigent/service.js';
+import type { InstalledPluginRecord } from '@open-design/contracts';
+import { OmnigentIntegrationService, normalizeOmnigentServer, omnigentPython, type OmnigentServiceOptions } from '../src/integrations/omnigent/service.js';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
-async function fixture() {
+async function fixture(sourceKind?: InstalledPluginRecord['sourceKind']) {
   const dir = await mkdtemp(path.join(tmpdir(), 'od-omnigent-service-')); dirs.push(dir);
-  let plugin: { id: string; installedAt: number } | null = { id: 'woow-omnigent', installedAt: 1 };
+  let plugin: Awaited<ReturnType<OmnigentServiceOptions['getPlugin']>> = { id: 'woow-omnigent', installedAt: 1, ...(sourceKind ? { sourceKind } : {}) };
   const engines = { claude: { installed: true, ready: true, version: '2.1.284', agentId: 'agent-c', models: [{ id: 'sonnet', isDefault: true }] }, opencode: { installed: true, ready: true, version: '1.18.33', agentId: 'agent-o', models: [{ id: 'anthropic/claude-sonnet' }] }, codex: { installed: false }, pi: { installed: false } };
   const host = { id: 'this-host', connected: true };
   const adapter = vi.fn<NonNullable<OmnigentServiceOptions['adapter']>>(async (input: Record<string, unknown>) => {
@@ -22,6 +23,29 @@ async function fixture() {
   return { dir, service, options, engines, host, adapter, onboarding, setup, setPlugin: (value: typeof plugin) => { plugin = value; } };
 }
 describe('Omnigent native service', () => {
+  it('rediscovers the private SDK after a daemon restart without reinstalling it', () => {
+    const state = '/fixture/integrations/omnigent';
+    const managed = path.join(state, 'deps/uv/tools/omnigent/bin/python');
+    expect(omnigentPython(state, {}, p => p === managed)).toBe(managed);
+    expect(omnigentPython(state, { OD_OMNIGENT_PYTHON: '/explicit/python' }, () => true)).toBe('/explicit/python');
+    expect(omnigentPython(state, {}, p => p === '/opt/omnigent/venv/bin/python')).toBe('/opt/omnigent/venv/bin/python');
+    expect(omnigentPython(state, {}, () => false)).toBe('python3');
+  });
+  it('uses a private persistent host home and resumes only after confirmed setup', async () => {
+    const f = await fixture('bundled');
+    await f.service.status();
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ configHome: path.join(f.dir, 'integrations/omnigent/host') });
+    expect(f.adapter.mock.calls[0]?.[0]).not.toHaveProperty('allowManagedHost');
+    await f.setup();
+    f.adapter.mockClear();
+    const restarted = new OmnigentIntegrationService(f.options);
+    await restarted.status('local', true);
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+    await restarted.action({ action: 'disable' });
+    f.adapter.mockClear();
+    await restarted.status('local', true);
+    expect(f.adapter).not.toHaveBeenCalled();
+  });
   it.each(['https://u:p@omni.example', 'http://remote.example', 'https://omni.example?q=password', 'https://omni.example/#secret', 'file:///tmp/omni', 'https://omni.example\\evil'])('rejects credential-bearing or unsafe server %s', value => expect(() => normalizeOmnigentServer(value)).toThrow());
   it('normalizes the selected server', () => expect(normalizeOmnigentServer(' https://OMNI.example/ ')).toBe('https://omni.example'));
   it('starts without inheriting approval and checks only local inventory', async () => {
@@ -30,8 +54,17 @@ describe('Omnigent native service', () => {
     expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'status', localOnly: true });
     expect(s.installedEngines).toEqual(['claude', 'opencode']);
   });
-  it('creates one native onboarding per scope without model activity', async () => {
-    const f = await fixture(); await f.service.action({ action: 'enable' }, 'a'); await f.service.action({ action: 'enable' }, 'a'); await f.service.action({ action: 'enable' }, 'b');
+  it.each(['bundled', 'user', 'github', 'project', undefined] as const)('reports installation source %s without starting onboarding', async sourceKind => {
+    const f = await fixture(sourceKind); const status = await f.service.status();
+    expect(status.installationSource).toBe(sourceKind === 'bundled' ? 'bundled' : 'user');
+    expect(status.phase).toBe('needs-login'); expect(status.loginConfirmed).toBe(false);
+    expect(status.onboarding).toBeUndefined(); expect(f.onboarding).not.toHaveBeenCalled();
+    expect(f.adapter.mock.calls.every(call => call[0].action === 'status')).toBe(true);
+  });
+  it.each(['bundled', 'user', undefined] as const)('explicit enable creates onboarding per scope for source %s without model activity', async sourceKind => {
+    const f = await fixture(sourceKind); const enabled = await f.service.action({ action: 'enable' }, 'a'); await f.service.action({ action: 'enable' }, 'a'); await f.service.action({ action: 'enable' }, 'b');
+    expect(enabled.installationSource).toBe(sourceKind ?? 'user');
+    expect(enabled.onboarding?.conversationId).toBe('chat-a'); expect(enabled.loginConfirmed).toBe(false);
     expect(f.onboarding.mock.calls.map(call => call[0])).toEqual(['a', 'a', 'b']);
     expect((await f.service.status('a')).onboarding?.conversationId).toBe('chat-a');
     expect(f.adapter.mock.calls.every(call => call[0].action === 'status')).toBe(true);
@@ -91,8 +124,32 @@ describe('Omnigent native service', () => {
   });
   it('uninstall stops checks and gates all operations', async () => {
     const f = await fixture(); await f.setup(); f.setPlugin(null); f.adapter.mockClear();
-    expect((await f.service.status('local', true)).phase).toBe('not-installed'); expect(f.adapter).not.toHaveBeenCalled();
+    const status = await f.service.status('local', true);
+    expect(status.phase).toBe('not-installed'); expect(status).not.toHaveProperty('installationSource'); expect(f.adapter).not.toHaveBeenCalled();
     await expect(f.service.action({ action: 'enable' })).rejects.toMatchObject({ code: 'PLUGIN_NOT_INSTALLED' });
+  });
+  it('derives installation source from the current record without persisting it or invalidating approval', async () => {
+    const f = await fixture('bundled'); const before = await f.setup();
+    expect(before.installationSource).toBe('bundled');
+    const stateFile = path.join(f.dir, 'integrations/omnigent/state.json');
+    const persisted = await readFile(stateFile, 'utf8');
+    expect(JSON.parse(persisted)).not.toHaveProperty('installationSource');
+    f.setPlugin({ id: 'woow-omnigent', installedAt: 1, sourceKind: 'user' });
+    const status = await f.service.status();
+    expect(status.installationSource).toBe('user'); expect(status.phase).toBe('ready');
+    expect(status.loginConfirmed).toBe(true); expect(status.verification).toEqual(before.verification);
+    expect(await readFile(stateFile, 'utf8')).toBe(persisted);
+    expect((await f.service.action({ action: 'disable' })).installationSource).toBe('user');
+  });
+  it('reports each scope installation source without sharing approval', async () => {
+    const f = await fixture('bundled');
+    const service = new OmnigentIntegrationService({ ...f.options, getPlugin: scope => scope === 'other-workspace'
+      ? { id: 'woow-omnigent', installedAt: 999, sourceKind: 'user' } : f.options.getPlugin() });
+    await service.action({ action: 'setup', server: 'https://omni.example', username: 'fresh', password: 'transient' }); await service.waitForIdle();
+    const foreign = await service.status('other-workspace', true);
+    expect(foreign.installationSource).toBe('user'); expect(foreign.loginConfirmed).toBe(false); expect(foreign.verification).toEqual({});
+    const owner = await service.status();
+    expect(owner.installationSource).toBe('bundled'); expect(owner.phase).toBe('ready');
   });
   it('update cannot turn ambient credentials into fresh approval', async () => {
     const f = await fixture(); await f.service.action({ action: 'update' }); await f.service.waitForIdle();

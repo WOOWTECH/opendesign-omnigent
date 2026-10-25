@@ -44,6 +44,7 @@ export type EntrySettingsSection =
   | 'composio'
   | 'orbit'
   | 'integrations'
+  | 'omnigent'
   | 'mcpClient'
   | 'language'
   // Legacy deep-link token: the theme setting is gone (the app ships

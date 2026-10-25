@@ -4,14 +4,14 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { OmnigentActionRequest, OmnigentIntegrationStatus, OmnigentIssue, OmnigentOnboarding, OmnigentOperation, OmnigentReceipt, OmnigentEngine } from '@open-design/contracts';
+import type { InstalledPluginRecord, OmnigentActionRequest, OmnigentIntegrationStatus, OmnigentIssue, OmnigentOnboarding, OmnigentOperation, OmnigentReceipt, OmnigentEngine } from '@open-design/contracts';
 import { ensureOmnigentDependencies } from './dependencies.js';
 
 export const OMNIGENT_PLUGIN_ID = 'woow-omnigent';
 const ENGINE_IDS = ['claude', 'codex', 'pi', 'opencode'] as const;
 type AdapterResult = { ok: boolean; data?: Record<string, unknown>; error?: { code?: string } };
 type AdapterInput = Record<string, unknown>;
-interface PluginIdentity { id: string; installedAt: number; updatedAt?: number; version?: string; }
+interface PluginIdentity { id: string; installedAt: number; updatedAt?: number; version?: string; sourceKind?: InstalledPluginRecord['sourceKind']; }
 type StoredReceipt = OmnigentReceipt & { server: string | null; hostId?: string };
 interface State {
   schema: 1; installedGeneration?: number; enabled: boolean; phase: string; server: string | null;
@@ -69,6 +69,11 @@ export function normalizeOmnigentServer(input: unknown): string {
   } catch { throw new OmnigentServiceError('INVALID_SERVER', 400); }
 }
 function empty(): State { return { schema: 1, enabled: true, phase: 'needs-login', server: null, loginConfirmed: false, verification: {}, onboarding: {} }; }
+export function omnigentPython(stateDir: string, env: NodeJS.ProcessEnv, exists = existsSync): string {
+  const managed = path.join(stateDir, 'deps', 'uv', 'tools', 'omnigent', 'bin', 'python');
+  return env.OD_OMNIGENT_PYTHON ?? (exists(managed) ? managed
+    : exists('/opt/omnigent/venv/bin/python') ? '/opt/omnigent/venv/bin/python' : 'python3');
+}
 export class OmnigentIntegrationService {
   private readonly stateDir: string;
   private readonly file: string;
@@ -89,6 +94,11 @@ export class OmnigentIntegrationService {
     this.stateDir = path.join(options.dataDir, 'integrations', 'omnigent');
     this.file = path.join(this.stateDir, 'state.json');
     this.env = { ...(options.env ?? process.env) };
+    // Existing chart-managed hosts keep their configured home. A plugin-managed
+    // host gets its own persistent home derived from the daemon's data root.
+    this.env.OMNIGENT_CONFIG_HOME ??= path.join(this.stateDir, 'host');
+    this.env.OMNIGENT_DATA_DIR ??= this.env.OMNIGENT_CONFIG_HOME;
+    this.env.PATH = [path.join(this.stateDir, 'deps', 'bin'), this.env.PATH ?? ''].filter(Boolean).join(path.delimiter);
     this.adapter = options.adapter ?? (input => this.executeAdapter(input));
   }
   private async load(): Promise<void> {
@@ -121,17 +131,17 @@ export class OmnigentIntegrationService {
     });
     this.writeChain = next; await next;
   }
-  private async reconcile(scope: string): Promise<boolean> {
+  private async reconcile(scope: string): Promise<PluginIdentity | null> {
     await this.load();
     const plugin = await this.options.getPlugin(scope);
     // A reader's visible installation cannot replace another scope's active host setup.
-    if (this.state.installationScope && this.state.installationScope !== scope) return !!plugin;
+    if (this.state.installationScope && this.state.installationScope !== scope) return plugin;
     if (!plugin) {
       if (this.state.loginConfirmed || this.state.phase !== 'not-installed') {
         this.activeAbort?.abort();
         this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'not-installed'; await this.save();
       }
-      return false;
+      return null;
     }
     if (this.state.phase === 'not-installed' || this.state.installedGeneration !== plugin.installedAt) {
       this.activeAbort?.abort();
@@ -142,7 +152,7 @@ export class OmnigentIntegrationService {
       delete this.state.approvalScope;
       delete this.state.issue; await this.save();
     }
-    return true;
+    return plugin;
   }
   private async call(action: string, additional: AdapterInput = {}): Promise<AdapterResult> {
     try {
@@ -150,12 +160,15 @@ export class OmnigentIntegrationService {
         configHome: this.env.OMNIGENT_CONFIG_HOME ?? path.join(this.env.HOME ?? '', '.omnigent'),
         dataDir: this.env.OMNIGENT_DATA_DIR ?? this.env.OMNIGENT_CONFIG_HOME ?? path.join(this.env.HOME ?? '', '.omnigent'),
         workspace: this.env.OG_WORKSPACE ?? this.env.HOME,
+        ...(['status', 'catalog'].includes(action) && this.state.enabled && this.state.loginConfirmed && this.state.approvalScope
+          ? { allowManagedHost: true } : {}),
         ...(this.state.server ? { server: this.state.server } : {}), ...additional });
     } catch (error) {
       return { ok: false, error: { code: error instanceof OmnigentServiceError ? error.code : 'ADAPTER_FAILED' } };
     }
   }
-  private publicStatus(installed: boolean, scope: string): OmnigentIntegrationStatus {
+  private publicStatus(plugin: PluginIdentity | null, scope: string): OmnigentIntegrationStatus {
+    const installed = !!plugin;
     const approved = this.state.approvalScope === scope;
     const data = this.local; const rawHost = object(data.host); const rawEngines = object(data.engines);
     const engines: Record<string, OmnigentEngine> = {};
@@ -181,6 +194,7 @@ export class OmnigentIntegrationService {
     if (installed && this.state.enabled && !approved && !this.active) phase = 'needs-login';
     if (phase === 'ready' && (!this.state.loginConfirmed || !allVerified || rawHost.connected !== true)) phase = 'needs-verification';
     return { installed, enabled: installed && this.state.enabled, phase, server: approved ? this.state.server : null,
+      ...(plugin ? { installationSource: plugin.sourceKind === 'bundled' ? 'bundled' as const : 'user' as const } : {}),
       loginConfirmed: approved && this.state.loginConfirmed,
       host: { connected: approved && rawHost.connected === true, ...(hostId ? { id: hostId } : {}), ...(text(rawHost.name) ? { name: text(rawHost.name)! } : {}), ...(text(rawHost.manager) ? { manager: text(rawHost.manager)! } : {}) },
       installedEngines, engines, verification: approved ? { ...this.state.verification } : {},
@@ -190,9 +204,9 @@ export class OmnigentIntegrationService {
       ...(this.state.issue ? { issue: { ...this.state.issue } } : {}) };
   }
   async status(scope = 'local', fresh = false): Promise<OmnigentIntegrationStatus> {
-    const installed = await this.reconcile(scope);
-    if (this.state.installationScope && this.state.installationScope !== scope) return this.publicStatus(installed, scope);
-    if (installed && this.state.enabled && !this.active && (fresh || !this.lastCheck || Date.now() - this.lastCheck > 10_000)) {
+    const plugin = await this.reconcile(scope);
+    if (this.state.installationScope && this.state.installationScope !== scope) return this.publicStatus(plugin, scope);
+    if (plugin && this.state.enabled && !this.active && (fresh || !this.lastCheck || Date.now() - this.lastCheck > 10_000)) {
       this.statusCheck ??= (async () => {
         const operationId = this.state.operation?.id;
         const generation = this.state.installedGeneration;
@@ -207,7 +221,7 @@ export class OmnigentIntegrationService {
       })().finally(() => { this.statusCheck = undefined; });
       await this.statusCheck;
     }
-    return this.publicStatus(installed, scope);
+    return this.publicStatus(plugin, scope);
   }
   private async onboarding(scope: string): Promise<void> {
     let pending = this.onboardingWork.get(scope);
@@ -218,7 +232,8 @@ export class OmnigentIntegrationService {
     finally { this.onboardingWork.delete(scope); }
   }
   async action(input: OmnigentActionRequest, scope = 'local'): Promise<OmnigentIntegrationStatus> {
-    if (!await this.reconcile(scope)) throw new OmnigentServiceError('PLUGIN_NOT_INSTALLED');
+    const plugin = await this.reconcile(scope);
+    if (!plugin) throw new OmnigentServiceError('PLUGIN_NOT_INSTALLED');
     if (this.active || this.mutationBusy) throw new OmnigentServiceError('OPERATION_BUSY');
     this.mutationBusy = true;
     try {
@@ -230,11 +245,11 @@ export class OmnigentIntegrationService {
         this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'needs-login'; this.state.enabled = true;
         delete this.state.approvalScope; await this.save();
       }
-      return await this.actionReserved(input, scope);
+      return await this.actionReserved(input, scope, plugin);
     }
     finally { this.mutationBusy = false; }
   }
-  private async actionReserved(input: OmnigentActionRequest, scope: string): Promise<OmnigentIntegrationStatus> {
+  private async actionReserved(input: OmnigentActionRequest, scope: string, plugin: PluginIdentity): Promise<OmnigentIntegrationStatus> {
     if (input.action === 'enable') {
       if (!this.state.enabled) { this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'needs-login'; }
       this.state.enabled = true; delete this.state.issue; await this.onboarding(scope); await this.save();
@@ -242,7 +257,7 @@ export class OmnigentIntegrationService {
     }
     if (input.action === 'disable') {
       this.state.enabled = false; this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'disabled'; delete this.state.issue; await this.save();
-      return this.publicStatus(true, scope);
+      return this.publicStatus(plugin, scope);
     }
     if (!this.state.enabled) throw new OmnigentServiceError('PLUGIN_DISABLED');
     if (input.action === 'setup') {
@@ -282,7 +297,7 @@ export class OmnigentIntegrationService {
       await this.save();
     }).finally(() => { this.active = undefined; this.activeAbort = undefined; this.lastCheck = 0; delete input.password; delete input.username; });
     this.active = pending;
-    return this.publicStatus(true, scope);
+    return this.publicStatus(plugin, scope);
   }
   private async perform(input: OmnigentActionRequest, assertCurrent: () => Promise<void>): Promise<void> {
     const operationCall = async (action: string, additional: AdapterInput = {}) => {
@@ -380,7 +395,7 @@ export class OmnigentIntegrationService {
   async waitForIdle(): Promise<void> { await this.active; }
   private async executeAdapter(input: AdapterInput): Promise<AdapterResult> {
     if (this.activeAbort?.signal.aborted) return { ok: false, error: { code: 'OPERATION_SUPERSEDED' } };
-    const python = this.env.OD_OMNIGENT_PYTHON ?? (existsSync('/opt/omnigent/venv/bin/python') ? '/opt/omnigent/venv/bin/python' : 'python3');
+    const python = omnigentPython(this.stateDir, this.env);
     const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'adapter.py');
     return new Promise(resolve => {
       const child = spawn(python, [script], { env: this.env, stdio: ['pipe', 'pipe', 'pipe'] });

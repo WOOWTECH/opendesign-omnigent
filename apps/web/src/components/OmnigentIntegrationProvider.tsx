@@ -104,7 +104,10 @@ export function OmnigentIntegrationProvider({ children }: { children: ReactNode 
       acceptStatus(next);
       // A completed import can outlive its view; recover from daemon-owned state.
       // Existing onboarding prevents re-enabling an intentionally disabled plugin.
-      if (next.installed && !next.onboarding && !writePending.current) await activate();
+      // Bundled launchers remain available without interrupting unrelated pages.
+      // An explicit Configure creates their onboarding; imported plugins keep
+      // the existing automatic first-install flow.
+      if (next.installed && next.installationSource !== 'bundled' && !next.onboarding && !writePending.current) await activate();
     } catch (error) {
       if (isCurrent(issuedIdentity, issuedAccount) && revision.current === issuedRevision)
         setErrorCode(error instanceof OmnigentRequestError ? error.code : 'REQUEST_FAILED');
@@ -122,7 +125,7 @@ export function OmnigentIntegrationProvider({ children }: { children: ReactNode 
     revision.current += 1;
     try {
       const options = { workspaceContext: resolvedWorkspaceContextForWrite(workspaceRef.current), signal: controller.current?.signal };
-      if (action === 'update') {
+      if (action === 'update' && statusRef.current?.installationSource !== 'bundled') {
         const upgrade = await upgradePlugin(OMNIGENT_PLUGIN_ID, options.workspaceContext);
         if (!isCurrent(issuedIdentity, issuedAccount)) return;
         if (!upgrade.ok) throw new OmnigentRequestError('UPDATE_FAILED');

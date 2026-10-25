@@ -4981,7 +4981,7 @@ function AppInner() {
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
     setSettingsHighlight(opts?.highlight ?? null);
-    navigate({ kind: 'home', view: 'settings' });
+    navigate({ kind: 'home', view: 'settings', ...(section === 'omnigent' ? { settingsSection: 'omnigent' as const } : {}) });
   }, [identityScopeKey]);
 
   // Entry point from the failed-run AMR nudge: open Settings on the execution
@@ -5219,7 +5219,8 @@ function AppInner() {
       daemonLive={daemonLive}
       appVersionInfo={appVersionInfo}
       welcome={presentation === 'modal' ? settingsWelcome : false}
-      initialSection={settingsInitialSection}
+      initialSection={presentation === 'page' && route.kind === 'home' && route.view === 'settings'
+        ? route.settingsSection ?? settingsInitialSection : settingsInitialSection}
       initialHighlight={settingsHighlight}
       persistedProjectWorkspaceId={
         route.kind === 'project'

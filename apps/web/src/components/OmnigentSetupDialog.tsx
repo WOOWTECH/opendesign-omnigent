@@ -32,7 +32,6 @@ export function OmnigentSetupDialog({ workspaceContext, busy, issueCode, onClose
     mounted.current = true;
     const previousFocus = document.activeElement as HTMLElement | null;
     const form = formRef.current;
-    firstInput.current?.focus();
     return () => {
       mounted.current = false;
       controller.current?.abort();
@@ -40,6 +39,13 @@ export function OmnigentSetupDialog({ workspaceContext, busy, issueCode, onClose
       previousFocus?.focus();
     };
   }, []);
+
+  useEffect(() => {
+    // The dialog can mount while another setup operation is busy, which disables
+    // the server field and makes an autofocus attempt a no-op. Focus it once the
+    // form becomes available, and again after a rejected submit resets the form.
+    if (!busy && !submitting) firstInput.current?.focus();
+  }, [busy, submitting]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

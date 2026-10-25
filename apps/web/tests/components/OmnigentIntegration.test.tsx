@@ -41,6 +41,36 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('native Omnigent integration', () => {
+  it('leaves a bundled launcher idle until Configure creates a fresh setup form', async () => {
+    const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(json(
+      request?.method === 'POST' ? { ok: true, status: status({ installationSource: 'bundled' }) }
+        : status({ installationSource: 'bundled', onboarding: undefined }),
+    )));
+    vi.stubGlobal('fetch', fetch);
+    renderIntegration();
+    const configure = await screen.findByRole('button', { name: 'Configure' });
+    expect(screen.queryByTestId('omnigent-setup-dialog')).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([, request]) => request?.method === 'POST')).toHaveLength(0);
+    fireEvent.click(configure);
+    expect(await screen.findByTestId('omnigent-setup-dialog')).toBeTruthy();
+    expect(mocks.navigate).toHaveBeenCalledWith({ kind: 'project', projectId: 'setup-project', conversationId: 'setup-conversation', fileName: null });
+    for (const label of ['Server URL', 'Account', 'Password']) expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe('');
+  });
+
+  it('updates the bundled integration runtime without asking the plugin installer to replace it', async () => {
+    const current = status({ installationSource: 'bundled' });
+    const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(json(
+      request?.method === 'POST' ? { ok: true, status: current } : current,
+    )));
+    vi.stubGlobal('fetch', fetch);
+    renderIntegration();
+    fireEvent.click(await screen.findByRole('button', { name: 'Update plugin' }));
+    await waitFor(() => expect(fetch.mock.calls.filter(([, request]) => request?.method === 'POST')
+      .map(([, request]) => JSON.parse(request.body))).toEqual([{ action: 'update' }]));
+    expect(mocks.upgrade).not.toHaveBeenCalled();
+  });
+
   it('renders no Settings section while the Omnigent plugin is not installed', async () => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(json(status({ installed: false, enabled: false, onboarding: undefined }))));
     vi.stubGlobal('fetch', fetch);

@@ -24,6 +24,15 @@ function roundTrip(route: Route): Route {
 }
 
 describe('parseRoute / buildPath (issue #1505)', () => {
+  it('round-trips the Omnigent settings launcher and tolerates a trailing slash', () => {
+    const route: Route = { kind: 'home', view: 'settings', settingsSection: 'omnigent' };
+    expect(buildPath(route)).toBe('/settings/omnigent');
+    expect(roundTrip(route)).toEqual(route);
+    expect(parseRoute('/settings/omnigent/')).toEqual(route);
+    expect(parseRoute('/settings')).toEqual({ kind: 'home', view: 'settings' });
+    expect(parseRoute('/settings/unknown')).toEqual({ kind: 'home', view: 'settings' });
+  });
+
   it('parses the home route', () => {
     expect(parseRoute('/')).toEqual({ kind: 'home', view: 'home' });
     expect(parseRoute('')).toEqual({ kind: 'home', view: 'home' });

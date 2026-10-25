@@ -1,0 +1,17 @@
+{
+  "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
+  "name": "woow-omnigent",
+  "title": "Omnigent",
+  "version": "0.1.4",
+  "description": "Connect Omnigent, choose an installed engine and model, and manage the connection.",
+  "description_i18n": {
+    "en": "Connect Omnigent, choose an installed engine and model, and manage the connection.",
+    "zh-CN": "连接 Omnigent，选择已安装的引擎与模型，并管理连接。",
+    "zh-TW": "連結 Omnigent，選擇已安裝的引擎與模型，並管理連線。"
+  },
+  "license": "Apache-2.0",
+  "author": { "name": "WoowTech" },
+  "tags": ["woow", "built-in", "launcher", "integration"],
+  "od": { "launch": { "path": "/settings/omnigent" } }
+}

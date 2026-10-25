@@ -28,8 +28,7 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
     : busy ? t('omnigent.running')
     : status.phase === 'ready' ? t('omnigent.ready') : t('omnigent.needsSetup');
 
-  // WoowTech: the Omnigent plugin is not bundled for now. Show nothing in Settings until it is installed,
-  // so there is no dead "not installed" entry; installing the plugin brings the section back.
+  // The section is available only when this scope has the integration plugin.
   if (!status?.installed) return null;
 
   return <section className={`settings-section ${styles.section}`} data-testid="omnigent-integration-section">

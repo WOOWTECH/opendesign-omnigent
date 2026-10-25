@@ -1,11 +1,19 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, mkdir, realpath, stat } from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const OMNIGENT_DEPENDENCY_VERSIONS = Object.freeze({ uv: '0.12.10', omnigent: '0.16.0' });
 const IMAGE_PYTHON = '/opt/omnigent/venv/bin/python';
 const SDK_PROBE = 'import omnigent; from importlib.metadata import version; print(version("omnigent"))';
+const SDK_PATCH_PROBE = 'import json; from importlib.metadata import version; from importlib.util import find_spec; print(json.dumps({"version": version("omnigent"), "packageRoot": list(find_spec("omnigent").submodule_search_locations)[0]}))';
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+// Source execution and builds share the reviewed deploy assets; packaged daemons carry a build copy.
+const SDK_PATCH_ASSETS = path.basename(path.resolve(moduleDir, '../..')) === 'src'
+  ? path.resolve(moduleDir, '../../../../../deploy/omnigent/sdk-patches')
+  : path.join(moduleDir, 'sdk-patches');
 
 export interface DependencyCommandOptions { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs: number; }
 export interface DependencyCommandResult { code: number | null; stdout: string; }
@@ -74,6 +82,37 @@ async function managed(python: string, deps: string): Promise<boolean> {
   catch { return false; }
 }
 
+/** Verify the exact private SDK on every reuse; only the reviewed baseline may be patched. */
+async function ensureManagedSdkPatch(python: string, deps: string, env: NodeJS.ProcessEnv, run: DependencyCommandRunner): Promise<void> {
+  try {
+    const root = await realpath(deps);
+    if (root !== path.join(await realpath(path.dirname(deps)), 'deps')) throw new Error();
+    const sdkRoot = await realpath(path.resolve(path.dirname(python), '..'));
+    if (!inside(root, sdkRoot)) throw new Error();
+    const manifest = JSON.parse(await readFile(path.join(SDK_PATCH_ASSETS, 'manifest.json'), 'utf8'));
+    if (manifest.sdkVersion !== OMNIGENT_DEPENDENCY_VERSIONS.omnigent || manifest.sdkRelativePath !== 'host/connect.py'
+      || manifest.patch !== 'opencode-host-model-options.patch' || !/^[a-f0-9]{64}$/.test(manifest.baseSha256)
+      || !/^[a-f0-9]{64}$/.test(manifest.replacementSha256)) throw new Error();
+    const info = await run(python, ['-I', '-B', '-c', SDK_PATCH_PROBE], { env, timeoutMs: 5_000 });
+    if (info.code !== 0) throw new Error();
+    const sdk = JSON.parse(info.stdout);
+    if (sdk.version !== OMNIGENT_DEPENDENCY_VERSIONS.omnigent || typeof sdk.packageRoot !== 'string'
+      || !path.isAbsolute(sdk.packageRoot) || !inside(sdkRoot, await realpath(sdk.packageRoot))) throw new Error();
+    const target = path.join(sdk.packageRoot, 'host', 'connect.py');
+    if (!(await lstat(target)).isFile() || !inside(sdkRoot, await realpath(target))) throw new Error();
+    const hash = async () => createHash('sha256').update(await readFile(target)).digest('hex');
+    const before = await hash();
+    if (before === manifest.replacementSha256) return;
+    if (before !== manifest.baseSha256) throw new Error();
+    const patched = await run(python, ['-I', '-B', path.join(SDK_PATCH_ASSETS, 'apply.py'), target,
+      path.join(SDK_PATCH_ASSETS, manifest.patch)], { env, cwd: deps, timeoutMs: 10_000 });
+    if (patched.code !== 0 || await hash() !== manifest.replacementSha256) throw new Error();
+  } catch {
+    // Neither imported paths, package source nor subprocess diagnostics cross the service boundary.
+    throw new Error('Private Omnigent SDK patch verification failed.');
+  }
+}
+
 /** Reuse installed SDKs. Install/update only private Omnigent/uv; never install agent engines. */
 export async function ensureOmnigentDependencies(options: OmnigentDependencyOptions): Promise<OmnigentDependencies> {
   const env = { ...(options.env ?? process.env) };
@@ -93,7 +132,11 @@ export async function ensureOmnigentDependencies(options: OmnigentDependencyOpti
   if (options.update && await probe(managedPython, runtimeEnv, run)) candidates.unshift(managedPython);
   for (const python of [...new Set(candidates.filter((value): value is string => Boolean(value)))]) {
     if (!await probe(python, runtimeEnv, run)) continue;
-    if (!options.update || !await managed(python, deps)) return { python, env: runtimeEnv };
+    if (!await managed(python, deps)) return { python, env: runtimeEnv };
+    if (!options.update) {
+      await ensureManagedSdkPatch(python, deps, runtimeEnv, run);
+      return { python, env: runtimeEnv };
+    }
     break;
   }
 
@@ -135,5 +178,6 @@ export async function ensureOmnigentDependencies(options: OmnigentDependencyOpti
   args.push(`omnigent==${OMNIGENT_DEPENDENCY_VERSIONS.omnigent}`);
   await checkedRun(uv, args, 600_000, 'Private Omnigent installation failed. Check package registry access and retry.');
   if (!await probe(managedPython, runtimeEnv, run)) throw new Error('The private Omnigent SDK is unavailable after installation.');
+  await ensureManagedSdkPatch(managedPython, deps, runtimeEnv, run);
   return { python: managedPython, env: runtimeEnv };
 }
