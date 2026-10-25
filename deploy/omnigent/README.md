@@ -5,14 +5,23 @@
 The Dockerfile inherits the complete PaaS `20261024.0943` image by digest. It
 replaces daemon dist and web out, and adds the bundled Omnigent plugin. Existing
 MCP, native CLI versions, contracts runtime, entrypoint and command come from
-that base. It installs neither engines nor an image-wide Omnigent SDK.
+that base. It also copies the precompiled Omnigent 0.16.0 SDK from the fixed
+`20261005.1409` image digest. Only `/opt/omnigent` and the hash-listed re2,
+abseil and ICU runtime closure are copied. Existing system libraries must
+match byte for byte; a conflict fails the build. No agent engine is copied.
 
 The daemon owns private SDK installation, hash-verified SDK patching and the
-private host supervisor. Its build must include SDK patch assets, `supervisor.sh`
+private host supervisor. The PaaS Alpine image reuses the precompiled SDK;
+compatible hosts without it can use the private SDK installer. Its build must include SDK patch assets, `supervisor.sh`
 and `og_helper.py` below `dist/integrations/omnigent/`. The packager copies the
 entire dist tree, including other kit assets and executable modes. The reviewed
 SDK patch stays in `deploy/omnigent/sdk-patches`; `build-assets.ts` copies it to
-dist. There is no second Dockerfile patch operation.
+dist. The same reviewed patch is applied to the image SDK during the build.
+
+An isolated test of the original Alpine base failed to install the SDK from
+PyPI because google-re2 needs development headers. The precompiled SDK removes
+that requirement from tenant setup. The build checks SDK imports, a real re2
+match, and Claude SDK resolution to the current `/usr/local/bin/claude`.
 
 The inherited branding scripts run again on the replacement web/daemon output.
 Manifest file hashes describe the input bytes before those scripts run, not the
@@ -99,9 +108,8 @@ change does not edit Helm values, charts, templates or running services.
 ## Remaining release gates
 
 - Build final daemon assets after the private supervisor and SDK changes land.
-- Verify fresh dependency installation on the Alpine base, then host lifecycle,
-  GUI connection and model conversations. The historical SDK layer needed musl
-  build support for `google-re2` and `claude-agent-sdk`; packaging is not evidence
-  that the new private installation succeeds.
+- Verify SDK reuse in a fresh Alpine container, then host lifecycle,
+  GUI connection and model conversations. A successful image build verifies
+  imports and native CLI resolution; it does not prove server login or replies.
 - Build/push the candidate and retain its immutable digest. No image build,
   registry push or deployment was performed while preparing these files.

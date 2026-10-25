@@ -96,7 +96,7 @@ def main():
             or sdk_manifest.get('patch') != 'opencode-host-model-options.patch'):
         raise ValueError('Unexpected SDK patch contract; review deployment packaging.')
     # build-assets.ts copies these canonical assets. Do not ship a stale dist
-    # copy after a patch change; the image never patches an SDK itself.
+    # copy after a patch change.
     for name in ('apply.py', 'manifest.json', 'opencode-host-model-options.patch'):
         canonical = root / 'deploy/omnigent/sdk-patches' / name
         if entries[sdk_prefix + name] != canonical.read_bytes():
@@ -107,17 +107,24 @@ def main():
             or plugin.get('od', {}).get('launch', {}).get('path') != '/settings/omnigent'):
         raise ValueError('Unexpected bundled Omnigent launcher manifest.')
     dockerfile = (root / 'deploy/omnigent/Dockerfile').read_bytes()
-    if dockerfile.decode().splitlines()[0] != 'FROM ' + BASE_IMAGE:
+    if [line for line in dockerfile.decode().splitlines() if line.startswith('FROM ')][-1] != 'FROM ' + BASE_IMAGE:
         raise ValueError('Dockerfile must inherit the pinned complete PaaS image.')
     entries['Dockerfile'] = dockerfile
     modes['Dockerfile'] = 0o644
+    for name in ('manifest.json', 'materialize.py'):
+        entries['sdk-runtime/' + name] = (root / 'deploy/omnigent/sdk-runtime' / name).read_bytes()
+        modes['sdk-runtime/' + name] = 0o644
+    sdk_runtime = json.loads(entries['sdk-runtime/manifest.json'])
+    if dockerfile.decode().splitlines()[0] != 'FROM ' + sdk_runtime['sourceImage'] + ' AS sdk':
+        raise ValueError('SDK source must match the pinned runtime manifest.')
     manifest = {
         'schemaVersion': 2,
         'sourceRevision': revision,
         'upstreamRevision': UPSTREAM_REVISION,
         'baseImage': BASE_IMAGE,
         'baseSourceRevision': 'b8a1371924d3aedb74dff563a5ff35a783919dee',
-        'runtimeDependencyClosure': 'Inherited from the complete pinned PaaS base image',
+        'runtimeDependencyClosure': 'Pinned PaaS base plus hash-verified Omnigent SDK runtime closure',
+        'sdkRuntime': sdk_runtime,
         'contractsRuntime': 'Inherited; release assumes source changes are type-only',
         'lockfileSha256': sha256((root / 'pnpm-lock.yaml').read_bytes()),
         'bundledPlugin': {'name': plugin['name'], 'version': plugin['version']},

@@ -1,0 +1,287 @@
+{
+  "externalDependencies": [
+    "/lib/ld-musl-x86_64.so.1",
+    "/usr/lib/libabsl_base.so.2508.0.0",
+    "/usr/lib/libabsl_city.so.2508.0.0",
+    "/usr/lib/libabsl_debugging_internal.so.2508.0.0",
+    "/usr/lib/libabsl_examine_stack.so.2508.0.0",
+    "/usr/lib/libabsl_hash.so.2508.0.0",
+    "/usr/lib/libabsl_hashtablez_sampler.so.2508.0.0",
+    "/usr/lib/libabsl_int128.so.2508.0.0",
+    "/usr/lib/libabsl_kernel_timeout_internal.so.2508.0.0",
+    "/usr/lib/libabsl_leak_check.so.2508.0.0",
+    "/usr/lib/libabsl_log_globals.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_check_op.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_format.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_globals.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_log_sink_set.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_message.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_nullguard.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_proto.so.2508.0.0",
+    "/usr/lib/libabsl_log_internal_structured_proto.so.2508.0.0",
+    "/usr/lib/libabsl_log_sink.so.2508.0.0",
+    "/usr/lib/libabsl_malloc_internal.so.2508.0.0",
+    "/usr/lib/libabsl_raw_hash_set.so.2508.0.0",
+    "/usr/lib/libabsl_raw_logging_internal.so.2508.0.0",
+    "/usr/lib/libabsl_spinlock_wait.so.2508.0.0",
+    "/usr/lib/libabsl_stacktrace.so.2508.0.0",
+    "/usr/lib/libabsl_str_format_internal.so.2508.0.0",
+    "/usr/lib/libabsl_strerror.so.2508.0.0",
+    "/usr/lib/libabsl_strings.so.2508.0.0",
+    "/usr/lib/libabsl_strings_internal.so.2508.0.0",
+    "/usr/lib/libabsl_symbolize.so.2508.0.0",
+    "/usr/lib/libabsl_synchronization.so.2508.0.0",
+    "/usr/lib/libabsl_time.so.2508.0.0",
+    "/usr/lib/libabsl_time_zone.so.2508.0.0",
+    "/usr/lib/libabsl_tracing_internal.so.2508.0.0",
+    "/usr/lib/libgcc_s.so.1",
+    "/usr/lib/libicudata.so.78",
+    "/usr/lib/libicuuc.so.78",
+    "/usr/lib/libre2.so.11",
+    "/usr/lib/libstdc++.so.6",
+    "/usr/lib/libz.so.1"
+  ],
+  "runtimeFiles": {
+    "/usr/lib/libabsl_base.so.2508.0.0": {
+      "bytes": 18384,
+      "kind": "file",
+      "sha256": "004a1b83fd73b741923151fc65c099192963e2bc4a8e16f30cd453071f52a1a9",
+      "target": null
+    },
+    "/usr/lib/libabsl_city.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "37f39ea4eb1d9ba2ec29734caf4d2126cdfbee4a69dddf2c9363b1ab78c15d23",
+      "target": null
+    },
+    "/usr/lib/libabsl_debugging_internal.so.2508.0.0": {
+      "bytes": 18296,
+      "kind": "file",
+      "sha256": "72de949b5b11ecae038d92726bb1268dbbc1b3d627d60e423c4c6bbf57ec013a",
+      "target": null
+    },
+    "/usr/lib/libabsl_examine_stack.so.2508.0.0": {
+      "bytes": 13936,
+      "kind": "file",
+      "sha256": "2c43cd2466a2c5c40275056ee3004c87c0ceaa85665ce63fe1f30f46b4c372f4",
+      "target": null
+    },
+    "/usr/lib/libabsl_hash.so.2508.0.0": {
+      "bytes": 14016,
+      "kind": "file",
+      "sha256": "e7b097331735efc96d4c1be4d8cb5f950a3210c86972338085ed3cc1d8cf560b",
+      "target": null
+    },
+    "/usr/lib/libabsl_hashtablez_sampler.so.2508.0.0": {
+      "bytes": 18288,
+      "kind": "file",
+      "sha256": "c3430ef153b0479bd76f45ccf31bfee27e05a998c325d1812468b4487e439f19",
+      "target": null
+    },
+    "/usr/lib/libabsl_int128.so.2508.0.0": {
+      "bytes": 22376,
+      "kind": "file",
+      "sha256": "1ca441998bbd6d64a7ddd03c778f086804df18f41974e77c43850d512b3e40f5",
+      "target": null
+    },
+    "/usr/lib/libabsl_kernel_timeout_internal.so.2508.0.0": {
+      "bytes": 18032,
+      "kind": "file",
+      "sha256": "002ab8affb5d8daabd7eedcdcb9d26cfaacbb5bb30793942061631f18225e231",
+      "target": null
+    },
+    "/usr/lib/libabsl_leak_check.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "34e0c09ed27ecd0b12bed9adb41689d12466aa3fc092cee9866e33a2f0e1dfd9",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_globals.so.2508.0.0": {
+      "bytes": 18312,
+      "kind": "file",
+      "sha256": "26180486f96fedd3160e5b9e8f51c9c7d4b9dce31bcc7cd36e3d96957e637141",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_check_op.so.2508.0.0": {
+      "bytes": 22376,
+      "kind": "file",
+      "sha256": "3a2a91516f20c3640530b9cc2315b08600e190aaaf88181a7aeba93c4c74b98d",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_format.so.2508.0.0": {
+      "bytes": 18032,
+      "kind": "file",
+      "sha256": "55d30d116a71407c3b30a62e62b8df6c49f8c5bf8c72f5f067a7174526b41ba5",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_globals.so.2508.0.0": {
+      "bytes": 13944,
+      "kind": "file",
+      "sha256": "57207018fb985761df2f4549cb93e6db0a482d97687ac1ae2a584f456b5eb81b",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_log_sink_set.so.2508.0.0": {
+      "bytes": 18424,
+      "kind": "file",
+      "sha256": "7c2ec76762319a5fcabe37a32e6aada7c8eefd19510d129a508e2ccea9614b0a",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_message.so.2508.0.0": {
+      "bytes": 51128,
+      "kind": "file",
+      "sha256": "231d825c66736204a71c5fa5bb62d44dc63bc90e27d6814344b24d0e00426fff",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_nullguard.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "1c2091f8684dbb70b24a9ca790f458536e487cfdbfb1f64629219a547c1a79ed",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_proto.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "88361adc23c24e359c75da6c2e58a6038ff92cec28778dc16705bd1678950bfe",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_internal_structured_proto.so.2508.0.0": {
+      "bytes": 13936,
+      "kind": "file",
+      "sha256": "7ea0989856fe0c6fc652f242fedc14387c4c6fd29632055af98fc39215103283",
+      "target": null
+    },
+    "/usr/lib/libabsl_log_sink.so.2508.0.0": {
+      "bytes": 14016,
+      "kind": "file",
+      "sha256": "27b0332e8500c3bf08a866b9341fc855f4973bcf8d9a6525008de5e33c94d164",
+      "target": null
+    },
+    "/usr/lib/libabsl_malloc_internal.so.2508.0.0": {
+      "bytes": 18360,
+      "kind": "file",
+      "sha256": "bf37054827698d72f2b9ce59bc9b60434a86dd652bdfd6b98c645c7047e623c3",
+      "target": null
+    },
+    "/usr/lib/libabsl_raw_hash_set.so.2508.0.0": {
+      "bytes": 30392,
+      "kind": "file",
+      "sha256": "b7a10044a6ccb40ec411671e964490455bb7fac216d6f23f00c647a9e53afd37",
+      "target": null
+    },
+    "/usr/lib/libabsl_raw_logging_internal.so.2508.0.0": {
+      "bytes": 14240,
+      "kind": "file",
+      "sha256": "849a96ec3446569b889e59031fbbbe0dfef6d6b56e6e086f6d4d3da6abd46958",
+      "target": null
+    },
+    "/usr/lib/libabsl_spinlock_wait.so.2508.0.0": {
+      "bytes": 14112,
+      "kind": "file",
+      "sha256": "d58fd194f760f3312c789a5aab99d6d1b4af91cbf05ea883da62bffada548788",
+      "target": null
+    },
+    "/usr/lib/libabsl_stacktrace.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "2b4708263e5eb8f12457ebd75114ddf72e12e0c5a3dae4aebc30fcbc193d3232",
+      "target": null
+    },
+    "/usr/lib/libabsl_str_format_internal.so.2508.0.0": {
+      "bytes": 83816,
+      "kind": "file",
+      "sha256": "75042e43e6a1bf6aaf33e0c532a7e1e12f848598db3acaf3197e110a851edfd3",
+      "target": null
+    },
+    "/usr/lib/libabsl_strerror.so.2508.0.0": {
+      "bytes": 14184,
+      "kind": "file",
+      "sha256": "9ff1d40621cb882b5b4607042aaa15ba27e718953787e0cd54245df1200b6934",
+      "target": null
+    },
+    "/usr/lib/libabsl_strings.so.2508.0.0": {
+      "bytes": 104296,
+      "kind": "file",
+      "sha256": "62962ce8c9b16ee52b60844f167d83809f45ed48d5a267a9ecf57480d3cb315c",
+      "target": null
+    },
+    "/usr/lib/libabsl_strings_internal.so.2508.0.0": {
+      "bytes": 18360,
+      "kind": "file",
+      "sha256": "235f76b672dc82e1d021a6084dbfebb61895b8416c21828f150301795ce16f20",
+      "target": null
+    },
+    "/usr/lib/libabsl_symbolize.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "f2912695b126cb0b979c9973c0b359afc670f33cbd878c8b882fb791314ca66f",
+      "target": null
+    },
+    "/usr/lib/libabsl_synchronization.so.2508.0.0": {
+      "bytes": 51192,
+      "kind": "file",
+      "sha256": "ba426412dca3a2eef94b89e96e7b1cc880141561a72abd613bef54080c8f255c",
+      "target": null
+    },
+    "/usr/lib/libabsl_time.so.2508.0.0": {
+      "bytes": 67512,
+      "kind": "file",
+      "sha256": "592620bcb6c5f14bbced983c5117863b4340c79498cda54a61d8ea7a803a4954",
+      "target": null
+    },
+    "/usr/lib/libabsl_time_zone.so.2508.0.0": {
+      "bytes": 96192,
+      "kind": "file",
+      "sha256": "14268a0885f0d56faf713ef877e7e886b26dd53a03dda247ea8eb4e114367f6f",
+      "target": null
+    },
+    "/usr/lib/libabsl_tracing_internal.so.2508.0.0": {
+      "bytes": 13864,
+      "kind": "file",
+      "sha256": "7a158dd86325c122c48858169c642bffaeb20a536c49ad3c0f4481f35e98d6cd",
+      "target": null
+    },
+    "/usr/lib/libicudata.so.78": {
+      "bytes": 9040,
+      "kind": "symlink",
+      "sha256": "e3b9c77978cc5aa646d8c93f0943df5d4a2d8264aa4970c24441b6f2fe149bd6",
+      "target": "libicudata.so.78.1"
+    },
+    "/usr/lib/libicudata.so.78.1": {
+      "bytes": 9040,
+      "kind": "file",
+      "sha256": "e3b9c77978cc5aa646d8c93f0943df5d4a2d8264aa4970c24441b6f2fe149bd6",
+      "target": null
+    },
+    "/usr/lib/libicuuc.so.78": {
+      "bytes": 1783808,
+      "kind": "symlink",
+      "sha256": "a9a8e85f501bb532503cb30e825aa604bac26aa085cbba48a4b54631194577fd",
+      "target": "libicuuc.so.78.1"
+    },
+    "/usr/lib/libicuuc.so.78.1": {
+      "bytes": 1783808,
+      "kind": "file",
+      "sha256": "a9a8e85f501bb532503cb30e825aa604bac26aa085cbba48a4b54631194577fd",
+      "target": null
+    },
+    "/usr/lib/libre2.so.11": {
+      "bytes": 530472,
+      "kind": "symlink",
+      "sha256": "9b81b27617cca2b28f18c6a9a7934b3fd75c6f7eb66931c3a6bd4ac65451bb18",
+      "target": "libre2.so.11.0.0"
+    },
+    "/usr/lib/libre2.so.11.0.0": {
+      "bytes": 530472,
+      "kind": "file",
+      "sha256": "9b81b27617cca2b28f18c6a9a7934b3fd75c6f7eb66931c3a6bd4ac65451bb18",
+      "target": null
+    }
+  },
+  "sdk": {
+    "claudeSdk": "0.2.163",
+    "omnigent": "0.16.0",
+    "python": "3.12.14"
+  },
+  "sdkSourceHash": "1093a7c89de966c39e598f683b2651073abf613152e4e875676135bd28138ad1",
+  "sourceImage": "jcr-prod.woowtech.io/woow-paas-docker-local/open-design:20261005.1409@sha256:0c257c7715f87c293744252aeb905d66dca87355b93c3293fde52bc2db586c7c"
+}
