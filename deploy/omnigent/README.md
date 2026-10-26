@@ -1,5 +1,9 @@
 # Omnigent derivative packaging
 
+For guarded UI-tree restoration, actual lifecycle results, and the distinction
+between launcher ZIP replacement and durable image rollback, see
+[Recovery and version lifecycle](recovery/README.md).
+
 ## v0.1.6 host SDK overlay
 
 This release fixes an OpenCode retry that otherwise leaves an exhausted provider
