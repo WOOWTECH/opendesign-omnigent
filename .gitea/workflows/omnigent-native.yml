@@ -1,0 +1,176 @@
+name: Native Omnigent validation
+
+# Native source checks; image builds and HA/GUI acceptance remain separate.
+# ubuntu-latest is the shared act-runner-runner-0 label used by charts run 28974,
+# which successfully ran checkout, sudo/apt, Python, Node and real test suites.
+# Evidence: https://git-prod.woowtech.io/woow-paas/woow-paas-charts/actions/runs/28974/jobs/32012
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    # This repository's default branch is not named main.
+    branches-ignore: [woow/omnigent-native-gui]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omnigent-native-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native Omnigent tests, types and builds
+    # Untrusted forks do not run on the shared internal runner. There is no
+    # pull_request_target job, secret input, publish step or status-writing API.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      NEXT_TELEMETRY_DISABLED: '1'
+      OPEN_DESIGN_POSTINSTALL_CONCURRENCY: '2'
+
+    steps:
+      - name: Checkout the tested revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install native build and Python prerequisites
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          command -v apt-get
+          if [ "$(id -u)" -eq 0 ]; then
+            APT=(apt-get)
+          else
+            command -v sudo
+            APT=(sudo -n apt-get)
+          fi
+          "${APT[@]}" update
+          "${APT[@]}" install -y --no-install-recommends \
+            build-essential python3 python3-dev python3-venv pkg-config \
+            ca-certificates git util-linux
+          g++ --version
+          make --version
+          python3 --version
+          python3 -c 'import sys; assert sys.version_info >= (3, 10), "Python 3.10+ is required"'
+          command -v flock
+          command -v setsid
+
+      - name: Set up Node 24.21.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+
+      - name: Set up pnpm 10.33.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.2'
+          run_install: false
+
+      - name: Prepare isolated Python test dependencies
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          OMNIGENT_TEST_VENV="$RUNNER_TEMP/omnigent-native-python"
+          python3 -m venv "$OMNIGENT_TEST_VENV"
+          "$OMNIGENT_TEST_VENV/bin/python3" -m pip install --disable-pip-version-check \
+            'PyYAML==6.0.3' 'cryptography==50.0.1'
+          printf '%s\n' "$OMNIGENT_TEST_VENV/bin" >> "$GITHUB_PATH"
+          printf 'PYTHON=%s\n' "$OMNIGENT_TEST_VENV/bin/python3" >> "$GITHUB_ENV"
+
+      - name: Install locked workspace dependencies
+        timeout-minutes: 20
+        env:
+          OPEN_DESIGN_POSTINSTALL_PHASE: dependencies
+        # Lifecycle scripts build SQLite for this runner; no borrowed node_modules.
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify SQLite loads under the selected Node ABI
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.21.0
+          test "$(pnpm --version)" = 10.33.2
+          pnpm --filter @open-design/daemon exec node --input-type=commonjs -e '
+            const Database = require("better-sqlite3");
+            const db = new Database(":memory:");
+            try {
+              console.log({ node: process.version, abi: process.versions.modules,
+                sqlite: db.prepare("select sqlite_version() as version").get() });
+            } finally { db.close(); }
+          '
+
+      - name: Build workspace prerequisites
+        timeout-minutes: 15
+        run: pnpm run postinstall build
+
+      - name: Daemon integration, launcher and MCP CAS tests
+        timeout-minutes: 10
+        run: |
+          pnpm --filter @open-design/daemon exec vitest run -c vitest.config.ts \
+            tests/omnigent-service.test.ts \
+            tests/integrations/omnigent \
+            tests/omnigent-routes.test.ts \
+            tests/plugins-builtin-launchers.test.ts \
+            tests/mcp-config.test.ts \
+            tests/mcp-servers-upsert.test.ts \
+            --maxWorkers=2
+
+      - name: Web setup, engine guidance and launcher tests
+        timeout-minutes: 10
+        run: |
+          pnpm --filter @open-design/web test \
+            tests/components/OmnigentIntegration.test.tsx \
+            tests/components/OmnigentProviderGuide.test.tsx \
+            tests/components/ExtensionsMarketplace.builtin-launchers.test.tsx \
+            tests/components/SettingsDialog.execution.test.tsx \
+            tests/omnigent-setup-dialog.focus.test.tsx \
+            tests/providers/omnigent.test.ts \
+            tests/router.test.ts
+
+      - name: Python adapter, SDK installer and build-context tests
+        timeout-minutes: 10
+        # These are executable offline suites. The installer explicitly reports
+        # its optional real-SDK fixture as skipped; installed-SDK acceptance is
+        # owned by the separate image pipeline, not implied by this job.
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s apps/daemon/src/integrations/omnigent -p test_adapter.py
+          python3 -B -m unittest discover -s deploy/omnigent/sdk-patches/tests -p test_apply.py
+          python3 -B -m unittest discover -s deploy/omnigent/tests -p 'test_*.py'
+
+      - name: Recovery tests with synthetic fixtures only
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s deploy/omnigent/recovery -p test_safe_restore.py
+          python3 -B -m unittest discover -s deploy/omnigent/recovery/sealed/crypto -p 'test_*.py'
+          python3 -B -m unittest discover -s deploy/omnigent/recovery/sealed/od-volume -p 'test_*.py'
+
+      - name: Repository guard
+        timeout-minutes: 10
+        run: pnpm guard
+
+      - name: Full workspace and script typecheck
+        timeout-minutes: 20
+        run: pnpm typecheck
+
+      - name: Build native daemon and bundled host assets
+        timeout-minutes: 10
+        run: pnpm --filter @open-design/daemon build
+
+      - name: Build production web
+        timeout-minutes: 20
+        run: pnpm --filter @open-design/web build
