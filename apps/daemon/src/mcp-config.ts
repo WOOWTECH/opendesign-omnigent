@@ -19,6 +19,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 // Wire-level MCP types. Mirrors `packages/contracts/src/api/mcp.ts` — the
 // daemon and web import-from-contracts side both round-trip the same JSON
@@ -250,6 +251,10 @@ export async function readMcpConfig(dataDir: string): Promise<McpConfig> {
 
 const writeLocks = new Map<string, Promise<unknown>>();
 
+type McpConfigUpdater = (previous: McpConfig) => McpConfig | Promise<McpConfig>;
+
+export function writeMcpConfig(dataDir: string, updater: McpConfigUpdater): Promise<McpConfig>;
+export function writeMcpConfig(dataDir: string, body: unknown): Promise<McpConfig>;
 export async function writeMcpConfig(
   dataDir: string,
   body: unknown,
@@ -265,7 +270,23 @@ export async function writeMcpConfig(
 }
 
 async function doWrite(dataDir: string, body: unknown): Promise<McpConfig> {
-  const next = sanitizeMcpConfig(body);
+  // Read and invoke the updater only after acquiring the same queue used by
+  // whole-config writes. Reject malformed/noncanonical input rather than
+  // silently dropping peer entries during an atomic single-entry update.
+  let nextBody = body;
+  if (typeof body === 'function') {
+    let previous: McpConfig;
+    try {
+      const parsed: unknown = JSON.parse(await readFile(configFile(dataDir), 'utf8'));
+      previous = sanitizeMcpConfig(parsed);
+      if (!isDeepStrictEqual(parsed, previous)) throw new Error('MCP_CONFIG_INVALID');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      previous = { servers: [] };
+    }
+    nextBody = await (body as McpConfigUpdater)(previous);
+  }
+  const next = sanitizeMcpConfig(nextBody);
   const file = configFile(dataDir);
   await mkdir(path.dirname(file), { recursive: true });
   const tmp = file + '.' + randomBytes(4).toString('hex') + '.tmp';
