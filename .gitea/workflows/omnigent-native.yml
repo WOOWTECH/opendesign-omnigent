@@ -155,9 +155,23 @@ jobs:
         timeout-minutes: 10
         run: |
           set -euo pipefail
-          python3 -B -m unittest discover -s deploy/omnigent/recovery -p test_safe_restore.py
-          python3 -B -m unittest discover -s deploy/omnigent/recovery/sealed/crypto -p 'test_*.py'
-          python3 -B -m unittest discover -s deploy/omnigent/recovery/sealed/od-volume -p 'test_*.py'
+          # Root bypasses the WAL fixture's chmod 0440 and lets SQLite alter
+          # its SHM. Exercise real read-only permissions as an unprivileged UID.
+          # Copy only the synthetic recovery suites, leaving checkout ownership alone.
+          RECOVERY_TEST_ROOT="$(mktemp -d /tmp/omnigent-recovery.XXXXXX)"
+          trap 'rm -rf -- "$RECOVERY_TEST_ROOT"' EXIT
+          cp -R deploy/omnigent/recovery "$RECOVERY_TEST_ROOT/recovery"
+          RECOVERY_PYTHON="$(command -v python3)"
+          RECOVERY_EXEC=()
+          if [ "$(id -u)" -eq 0 ]; then
+            chown -R 65534:65534 "$RECOVERY_TEST_ROOT"
+            RECOVERY_EXEC=(setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs)
+          fi
+          "${RECOVERY_EXEC[@]}" "$RECOVERY_PYTHON" -c \
+            'import os, sqlite3; assert os.geteuid() != 0; print({"uid": os.geteuid(), "sqlite": sqlite3.sqlite_version})'
+          "${RECOVERY_EXEC[@]}" "$RECOVERY_PYTHON" -B -m unittest discover -s "$RECOVERY_TEST_ROOT/recovery" -p test_safe_restore.py
+          "${RECOVERY_EXEC[@]}" "$RECOVERY_PYTHON" -B -m unittest discover -s "$RECOVERY_TEST_ROOT/recovery/sealed/crypto" -p 'test_*.py'
+          "${RECOVERY_EXEC[@]}" "$RECOVERY_PYTHON" -B -m unittest discover -s "$RECOVERY_TEST_ROOT/recovery/sealed/od-volume" -p 'test_*.py'
 
       - name: Repository guard
         timeout-minutes: 10
