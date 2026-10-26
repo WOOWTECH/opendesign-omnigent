@@ -80,6 +80,14 @@ describe('shouldRouteToFirstRunOnboarding', () => {
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/projects/project-a')).toBe(false);
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/')).toBe(true);
   });
+
+  it('lets a first-run user open the installed plugins page before model setup', () => {
+    const unfinished = { ...baseConfig, onboardingCompleted: false };
+
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/plugins')).toBe(false);
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/plugins/')).toBe(false);
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/automations')).toBe(true);
+  });
 });
 
 describe('hydrateReadyTeamProject', () => {
