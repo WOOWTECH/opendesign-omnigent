@@ -59,7 +59,7 @@ export const zhTW: Dict = {
   'omnigent.open': "開啟 Omnigent",
   'omnigent.repair': "修復連線",
   'omnigent.disconnect': "中斷連線",
-  'omnigent.disable': "停用",
+  'omnigent.disable': "停用並停止主機",
   'omnigent.update': "更新外掛",
   'omnigent.refresh': "重新整理狀態",
   'omnigent.installHint': "請從原生擴充功能庫安裝 Omnigent 外掛以開始。",

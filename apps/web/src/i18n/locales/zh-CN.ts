@@ -59,7 +59,7 @@ export const zhCN: Dict = {
   'omnigent.open': "打开 Omnigent",
   'omnigent.repair': "修复连接",
   'omnigent.disconnect': "断开连接",
-  'omnigent.disable': "停用",
+  'omnigent.disable': "停用并停止主机",
   'omnigent.update': "更新插件",
   'omnigent.refresh': "刷新状态",
   'omnigent.installHint': "请从原生扩展库安装 Omnigent 插件以开始。",

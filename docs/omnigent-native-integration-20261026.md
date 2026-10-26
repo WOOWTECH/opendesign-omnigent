@@ -31,7 +31,7 @@ service 也移除傳給 adapter 的 legacy supervisor home、config/data/status�
 - 只盤點並連結既有 Claude、Codex、Pi、OpenCode。dependency installer 只管理 Omnigent/uv；外部 SDK 只做唯讀 hash 驗證，只有私有 SDK 可以套用補丁。
 - plugins 清單及詳細頁的「開啟」連到 `/settings/omnigent`。
 - **已有 engine 修復互動介面**：設定頁顯示認證、版本及 quota 問題；可進入本機 CLI 設定、開啟失敗驗證對話、展開供應商設定指南、複製各 CLI 登入指令、開啟同 workspace 的原生終端機，最後重新驗證或「修復連線」。這是登入／設定引導與連線修復，沒有自動安裝缺少的引擎。
-- 保留 aa 語意：「停用」停止 OD 整合檢查並撤銷 OD 端登入核准；「取消連結」清除官方連線 token 並等待 host 離線，保留註冊和 supervisor。不能把「停用」測試當成 host 已關閉證據。容器停止及 supervisor lifecycle 由發行端候選環境另驗。
+- 本輪生命週期修正：「停用」撤銷 OD 端登入核准並停止自有 host／supervisor，保留 token；重新啟用仍須在 GUI 重新登入。「取消連結」清除官方連線 token 並停止自有 host／supervisor，保留 identity 供之後重連。daemon 關機使用有界清理，保留既有有效核准供重啟恢復；HA／PaaS 映像仍須另做實機驗收。
 
 ## 本機驗證
 

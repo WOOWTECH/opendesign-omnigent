@@ -59,7 +59,7 @@ export const ar: Dict = {
   'omnigent.open': "Open Omnigent",
   'omnigent.repair': "Repair connection",
   'omnigent.disconnect': "Disconnect",
-  'omnigent.disable': "Disable",
+  'omnigent.disable': "Disable and stop host",
   'omnigent.update': "Update plugin",
   'omnigent.refresh': "Refresh status",
   'omnigent.installHint': "Install the Omnigent plugin from the native Extensions library to begin.",
