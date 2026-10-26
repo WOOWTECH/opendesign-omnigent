@@ -142,7 +142,7 @@ export class OmnigentIntegrationService {
     if (!this.state.enabled || !this.state.loginConfirmed
       || this.state.installationScope !== 'local' || this.state.approvalScope !== 'local') return;
     // Reconcile the actual installation before allowing the adapter to resume.
-    await this.status('local', true);
+    await this.checkStatus('local', true, true);
   }
   private async save(): Promise<void> {
     const contents = JSON.stringify(this.state, null, 2) + '\n';
@@ -184,8 +184,6 @@ export class OmnigentIntegrationService {
         configHome: this.env.OMNIGENT_CONFIG_HOME,
         dataDir: this.env.OMNIGENT_DATA_DIR,
         workspace: this.env.OG_WORKSPACE ?? this.env.HOME,
-        ...(['status', 'catalog'].includes(action) && this.state.enabled && this.state.loginConfirmed && this.state.approvalScope
-          ? { allowManagedHost: true } : {}),
         ...(this.state.server ? { server: this.state.server } : {}), ...additional });
     } catch (error) {
       return { ok: false, error: { code: error instanceof OmnigentServiceError ? error.code : 'ADAPTER_FAILED' } };
@@ -228,9 +226,17 @@ export class OmnigentIntegrationService {
       ...(this.state.issue ? { issue: { ...this.state.issue } } : {}) };
   }
   async status(scope = 'local', fresh = false): Promise<OmnigentIntegrationStatus> {
+    return this.checkStatus(scope, fresh);
+  }
+  private async checkStatus(scope: string, fresh: boolean, resume = false): Promise<OmnigentIntegrationStatus> {
     const plugin = this.closing ? await this.options.getPlugin(scope) : await this.reconcile(scope);
     if (this.closing) return this.publicStatus(plugin, scope);
     if (this.state.installationScope && this.state.installationScope !== scope) return this.publicStatus(plugin, scope);
+    // A simultaneous read-only poll must not consume the startup restore.
+    if (resume && this.statusCheck) {
+      await this.statusCheck;
+      return this.checkStatus(scope, fresh, resume);
+    }
     if (plugin && this.state.enabled && !this.active && (fresh || !this.lastCheck || Date.now() - this.lastCheck > 10_000)) {
       this.statusCheck ??= (async () => {
         const operationId = this.state.operation?.id;
@@ -238,7 +244,9 @@ export class OmnigentIntegrationService {
         const approvalScope = this.state.approvalScope;
         const enabled = this.state.enabled;
         const remote = this.state.loginConfirmed && this.state.approvalScope === scope;
-        const response = await this.call(remote ? 'catalog' : 'status', remote ? {} : { localOnly: true });
+        const restore = remote && resume;
+        const response = await this.call(restore ? 'resume' : remote ? 'catalog' : 'status',
+          restore ? { allowManagedHost: true } : remote ? {} : { localOnly: true });
         if (this.active || operationId !== this.state.operation?.id || generation !== this.state.installedGeneration
           || approvalScope !== this.state.approvalScope || enabled !== this.state.enabled) return;
         this.local = response.ok ? object(response.data) : { engines: this.local.engines, host: { connected: false } };
@@ -363,6 +371,10 @@ export class OmnigentIntegrationService {
       const response = await operationCall('disconnect');
       await assertCurrent();
       if (!response.ok) throw new OmnigentServiceError(text(response.error?.code) ?? 'ADAPTER_FAILED');
+      // The remote disconnect has completed; no adapter invocation is still
+      // active here. Drain our host without waiting on this active operation.
+      await this.stopHost();
+      await assertCurrent();
       this.state.phase = 'needs-login'; this.local = { ...this.local, host: { connected: false } };
     } else {
       if (input.action === 'update' && !this.state.loginConfirmed) {

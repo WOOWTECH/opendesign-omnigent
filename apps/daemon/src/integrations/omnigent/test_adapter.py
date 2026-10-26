@@ -689,6 +689,89 @@ class OfficialAuthTests(unittest.TestCase):
         self.context = patch.dict(sys.modules, {"omnigent": self.package, "omnigent.cli_auth": self.sdk})
         self.context.start()
         self.addCleanup(self.context.stop)
+    def test_approved_restart_refreshes_expired_access_before_starting_host(self):
+        # SDK load_token returns None for an expired access token even when a
+        # valid refresh grant exists. Exercise OfficialAuth and the real Client.
+        token = 'FAKE_RENEWED_ACCESS'
+        def refresh(*args, **kwargs):
+            self.sdk.load_token.return_value = token
+            return token
+        self.sdk.refresh_stored_token.side_effect = refresh
+        http = Mock()
+        def request(method, url, **kwargs):
+            response = Mock()
+            response.status_code = 200 if kwargs['headers'].get('Authorization') == f'Bearer {token}' else 401
+            response.json.return_value = {'hosts': [{'host_id': 'host_local', 'status': 'online'}], 'data': [], 'has_more': False}
+            return response
+        http.request.side_effect = request
+        httpx = types.ModuleType('httpx'); httpx.Client = Mock(return_value=http)
+        httpx.HTTPError = type('HTTPError', (Exception,), {})
+        with tempfile.TemporaryDirectory() as root, patch.dict(sys.modules, {'httpx': httpx}):
+            instance = adapter.Adapter(dict(server=SERVER, stateDir=root, configHome=str(Path(root) / 'host'), dataDir=str(Path(root) / 'host'), allowManagedHost=True))
+            host = {**HOST, 'managerRunning': False}
+            instance.local_host = lambda: dict(host)
+            instance.engine_inventory = lambda: {key: {'installed': False, 'version': None} for key in adapter.ENGINES}
+            instance.ensure_host = Mock(side_effect=lambda _: host.update(managerRunning=True))
+            try:
+                result = instance.resume()
+                self.assertTrue(result['host']['connected'])
+                self.sdk.refresh_stored_token.assert_called_once_with(SERVER, timeout=10.0)
+                instance.ensure_host.assert_called_once_with(SERVER)
+                self.sdk.clear_token.assert_not_called()
+                self.sdk.store_token.assert_not_called()
+            finally:
+                instance.close()
+
+    def test_resume_never_refreshes_or_starts_without_approval_or_from_legacy_home(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = str(Path(root) / 'host')
+            cases = [{}, {'allowManagedHost': False}, {'allowManagedHost': True, 'localOnly': True},
+                     {'allowManagedHost': True, 'configHome': str(Path(root) / '.omnigent')},
+                     {'allowManagedHost': True, 'dataDir': str(Path(root) / '.omnigent')}]
+            for extra in cases:
+                with self.subTest(extra=extra):
+                    request = dict(server=SERVER, stateDir=root, configHome=home, dataDir=home)
+                    request.update(extra)
+                    instance = adapter.Adapter(request)
+                    instance.ensure_host = Mock()
+                    try:
+                        with self.assertRaises(adapter.AdapterError): instance.resume()
+                        self.sdk.load_token.assert_not_called()
+                        self.sdk.refresh_stored_token.assert_not_called()
+                        instance.ensure_host.assert_not_called()
+                    finally: instance.close()
+
+    def test_readonly_status_and_catalog_never_refresh_or_start_even_with_host_permission(self):
+        with tempfile.TemporaryDirectory() as root:
+            for action in ('status', 'catalog'):
+                for token in (None, 'FAKE_VALID_ACCESS'):
+                    with self.subTest(action=action, token=bool(token)):
+                        self.sdk.load_token.return_value = token
+                        instance = adapter.Adapter(dict(server=SERVER, stateDir=root, configHome=root, dataDir=root, allowManagedHost=True),
+                                                   client_factory=lambda *_: Service())
+                        instance.local_host = lambda: {**HOST, 'managerRunning': False}
+                        instance.engine_inventory = lambda: {key: {'installed': False, 'version': None} for key in adapter.ENGINES}
+                        instance.ensure_host = Mock()
+                        try:
+                            getattr(instance, action)()
+                            self.sdk.refresh_stored_token.assert_not_called()
+                            instance.ensure_host.assert_not_called()
+                        finally: instance.close()
+
+    def test_resume_refused_refresh_never_starts_host_or_clears_identity(self):
+        self.sdk.refresh_stored_token.return_value = None
+        with tempfile.TemporaryDirectory() as root:
+            home = str(Path(root) / 'host')
+            instance = adapter.Adapter(dict(server=SERVER, stateDir=root, configHome=home, dataDir=home, allowManagedHost=True))
+            instance.ensure_host = Mock()
+            try:
+                with self.assertRaises(adapter.AdapterError) as error: instance.resume()
+                self.assertEqual(error.exception.code, 'NEEDS_LOGIN')
+                self.sdk.refresh_stored_token.assert_called_once_with(SERVER, timeout=10.0)
+                instance.ensure_host.assert_not_called()
+                self.sdk.clear_token.assert_not_called()
+            finally: instance.close()
+
     def test_store_delegates_exact_official_shape_and_expiry(self):
         with patch.object(adapter.time, "time", return_value=10):
             adapter.OfficialAuth.save(SERVER, {"token": "FAKE_TOKEN", "user": {"id": "user_fake"},

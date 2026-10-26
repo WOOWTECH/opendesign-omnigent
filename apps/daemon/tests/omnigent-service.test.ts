@@ -1,4 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,7 +39,7 @@ describe('Omnigent native service', () => {
     expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['shutdown']);
     f.adapter.mockClear();
     await new OmnigentIntegrationService(f.options).resumeLocalHost();
-    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'resume', allowManagedHost: true });
   });
   it('prevents a pending setup dependency result from starting a host after shutdown', async () => {
     const f = await fixture('bundled');
@@ -150,7 +153,7 @@ process.stdin.on('end', () => {
     expect(state).toMatchObject({ enabled: true, loginConfirmed: true, approvalScope: 'local', installationScope: 'local' });
     f.adapter.mockClear();
     await new OmnigentIntegrationService(f.options).resumeLocalHost();
-    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'resume', allowManagedHost: true });
   });
   it('preserves the missing SDK diagnostic when the managed runner cannot spawn', async () => {
     const f = await fixture('bundled');
@@ -160,6 +163,87 @@ process.stdin.on('end', () => {
     await service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' });
     await service.waitForIdle();
     expect((await service.status()).issue?.code).toBe('DEPENDENCIES_MISSING');
+  });
+  it('does not let a simultaneous read-only poll consume the approved startup resume', async () => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    const original = f.adapter.getMockImplementation()!;
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    f.adapter.mockImplementation(async input => { if (input.action === 'catalog') await pending; return original(input); });
+    const restarted = new OmnigentIntegrationService(f.options);
+    const reading = restarted.status('local', true);
+    await vi.waitFor(() => expect(f.adapter).toHaveBeenCalled());
+    const restoring = restarted.resumeLocalHost();
+    finish(); await Promise.all([reading, restoring]);
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['catalog', 'resume']);
+    expect(f.adapter.mock.calls[0]?.[0]).not.toHaveProperty('allowManagedHost');
+    expect(f.adapter.mock.calls[1]?.[0]).toMatchObject({ allowManagedHost: true });
+  });
+  it('disconnect stops the private host after remote offline confirmation without deadlocking the operation', async () => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    const original = f.adapter.getMockImplementation()!;
+    f.adapter.mockImplementation(async input => { if (input.action === 'shutdown') f.host.connected = false; return original(input); });
+    await f.service.action({ action: 'disconnect' });
+    await f.service.waitForIdle();
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['disconnect', 'shutdown']);
+    expect(await f.service.status()).toMatchObject({ phase: 'needs-login', loginConfirmed: false, host: { connected: false } });
+    await f.service.resumeLocalHost();
+    expect(f.adapter.mock.calls.some(([input]) => input.action === 'resume')).toBe(false);
+  });
+  it('does not report disconnect completion when host stop cannot be verified', async () => {
+    const f = await fixture('bundled'); await f.setup();
+    const original = f.adapter.getMockImplementation()!;
+    f.adapter.mockImplementation(async input => input.action === 'shutdown'
+      ? { ok: false, error: { code: 'HOST_OWNERSHIP_UNVERIFIED' } } : original(input));
+    await f.service.action({ action: 'disconnect' }); await f.service.waitForIdle();
+    expect(await f.service.status()).toMatchObject({ phase: 'error', operation: { phase: 'error' }, issue: { code: 'HOST_OWNERSHIP_UNVERIFIED' } });
+  });
+  it('disconnect drains a real owned host and retains its config identity for reconnection', async () => {
+    const f = await fixture('bundled'); await f.setup();
+    const state = path.join(f.dir, 'integrations/omnigent');
+    const home = path.join(state, 'host'); await mkdir(home);
+    const owner = 'f'.repeat(64);
+    await writeFile(path.join(state, 'host-owner.json'), JSON.stringify({ schema: 1, id: owner }), { mode: 0o600 });
+    const config = 'host: {host_id: this-host}\n';
+    await writeFile(path.join(home, 'config.yaml'), config);
+    const tokens = path.join(home, 'auth_tokens.json'); await writeFile(tokens, 'synthetic-token');
+    const stopped = path.join(f.dir, 'host-stopped');
+    const host = spawn(process.execPath, ['-e', "const fs=require('node:fs');process.on('SIGTERM',()=>{fs.writeFileSync(process.argv[1],'TERM');process.exit(0)});console.log('ready');setInterval(()=>{},1000)", stopped], {
+      env: { ...process.env, OD_OMNIGENT_HOST_OWNER: owner, OD_OMNIGENT_HOST_HOME: home },
+      detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const exited = once(host, 'exit');
+    const python = path.join(f.dir, 'disconnect-adapter');
+    const adapter = fileURLToPath(new URL('../src/integrations/omnigent/adapter.py', import.meta.url));
+    await writeFile(python, `#!${process.execPath}
+const fs=require('node:fs'); const path=require('node:path'); let raw='';
+process.stdin.on('data', chunk => raw += chunk);
+process.stdin.on('end', () => {
+  const input=JSON.parse(raw);
+  if (input.action === 'shutdown') {
+    // Exercise the shipped adapter's real ownership/pidfd stop boundary.
+    process.stdout.write(require('node:child_process').execFileSync('python3', [${JSON.stringify(adapter)}], { input: raw, encoding: 'utf8' }));
+  } else {
+    // Remote offline confirmation is isolated from this process lifecycle test.
+    if (input.action === 'disconnect') fs.unlinkSync(path.join(input.dataDir,'auth_tokens.json'));
+    process.stdout.write(JSON.stringify({ok:true,data:{host:{id:'this-host',connected:false},engines:{}}}));
+  }
+});
+`, { mode: 0o700 });
+    const service = new OmnigentIntegrationService({ dataDir: f.dir, getPlugin: f.options.getPlugin,
+      createOnboarding: f.onboarding, env: { ...process.env, HOME: f.dir, OD_OMNIGENT_PYTHON: python } });
+    try {
+      await once(host.stdout, 'data');
+      await service.action({ action: 'disconnect' }); await service.waitForIdle();
+      expect(await service.status()).toMatchObject({ phase: 'needs-login', host: { id: 'this-host', connected: false } });
+      expect(await readFile(stopped, 'utf8')).toBe('TERM');
+      expect(await exited).toEqual([0, null]);
+      await expect(readFile(tokens)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(path.join(home, 'config.yaml'), 'utf8')).toBe(config);
+    } finally {
+      if (host.exitCode === null && host.signalCode === null) host.kill('SIGKILL');
+      await exited;
+    }
   });
   it('rediscovers the private SDK after a daemon restart without reinstalling it', () => {
     const state = '/fixture/integrations/omnigent';
@@ -179,7 +263,8 @@ process.stdin.on('end', () => {
     f.adapter.mockClear();
     const restarted = new OmnigentIntegrationService(f.options);
     await restarted.status('local', true);
-    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog' });
+    expect(f.adapter.mock.calls[0]?.[0]).not.toHaveProperty('allowManagedHost');
     await restarted.action({ action: 'disable' });
     f.adapter.mockClear();
     await restarted.status('local', true);
@@ -241,7 +326,7 @@ process.stdin.on('end', () => {
     await f.setup(); f.adapter.mockClear(); f.onboarding.mockClear();
     const restarted = new OmnigentIntegrationService(f.options);
     await restarted.resumeLocalHost();
-    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['catalog']);
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['resume']);
     expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ allowManagedHost: true });
     expect(f.onboarding).not.toHaveBeenCalled();
   });

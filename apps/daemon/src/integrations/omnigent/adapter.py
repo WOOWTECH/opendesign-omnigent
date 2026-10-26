@@ -415,11 +415,6 @@ class Adapter:
             if error.code != "NEEDS_SERVER":
                 raise
             server = None
-        if (server and self.request.get("allowManagedHost") is True
-                and not self.request.get("localOnly", False) and not host["managerRunning"]
-                and self.auth.token(server, refresh=False)):
-            self.ensure_host(server)
-            host = self.local_host()
         connectivity_error = None
         if server and host["id"] and not self.request.get("localOnly", False):
             try:
@@ -469,14 +464,24 @@ class Adapter:
                 break
         raise AdapterError("agent_catalog_too_large", "Omnigent agents 清單過大或分頁格式不正確。")
 
+    def resume(self) -> dict:
+        # Only the daemon's reconciled GUI approval authorizes this mutation.
+        # Plain status/catalog calls never renew credentials or start a host.
+        if self.request.get("allowManagedHost") is not True or self.request.get("localOnly", False):
+            raise AdapterError("needs_login", "請先在 GUI 完成本機連線設定。")
+        private_home = self.state_dir.resolve() / "host"
+        if self.config_home.resolve() != private_home or self.data_dir.resolve() != private_home:
+            raise AdapterError("host_ownership_unverified", "自動恢復僅能使用此整合的私有 host 設定。")
+        server = self.server()
+        if not self.auth.token(server, refresh=True):
+            raise AdapterError("needs_login", "原有登入已無法更新，請重新登入。")
+        self.ensure_host(server)
+        return self.catalog()
+
     def catalog(self, *, client=None, read_only=True, engine_key=None) -> dict:
         server = self.server()
         client = client or self.client_factory(server, read_only)
         host = self.local_host()
-        if (self.request.get("allowManagedHost") is True and not host["managerRunning"]
-                and self.auth.token(server, refresh=False)):
-            self.ensure_host(server)
-            host = self.local_host()
         hosts = self.api(client, "GET", "/v1/hosts").get("hosts")
         if not isinstance(hosts, list):
             raise AdapterError("invalid_response", "Omnigent hosts 清單格式不正確。")
@@ -1042,7 +1047,7 @@ def dispatch(request: dict, **dependencies) -> dict:
     if not isinstance(request, dict):
         raise AdapterError("invalid_request", "請提供 JSON object。")
     action = request.get("action")
-    if action not in ("status", "inventory", "catalog", "login", "connect", "verify", "disconnect", "shutdown"):
+    if action not in ("status", "inventory", "catalog", "login", "connect", "verify", "disconnect", "shutdown", "resume"):
         raise AdapterError("invalid_action", "不支援此 Omnigent 操作。")
     original_environment = {key: os.environ.get(key) for key in ("OMNIGENT_CONFIG_HOME", "OMNIGENT_DATA_DIR")}
     plugin = None
