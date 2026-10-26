@@ -1,8 +1,14 @@
 # Omnigent recovery and version lifecycle
 
-These operator tools restore a backed-up **server UI tree**. They are separate
-from the downloadable OD plugin ZIP and do not restore a database, credentials,
-host configuration, attachments, Helm release, or complete service.
+This directory contains operator recovery tools and dated acceptance evidence,
+separate from the downloadable OD plugin ZIP. `safe_restore.py` restores only a
+backed-up **server UI tree**. The [sealed backup tools](sealed/README.md) add
+authenticated encryption and guarded OD-volume capture/restore; they are building
+blocks, not a one-click deployment or cluster-recovery installer.
+
+The [application recovery drill](application-recovery-20261026.md) records actual
+production-backup, original-secret and isolated native Helm reconstruction
+results. See its scope and limitations before using the older receipts below.
 
 ## Restore a UI tree into a new directory
 
@@ -106,16 +112,20 @@ backend overlays, PostgreSQL 16.15, native accounts login and project APIs, and
 the full serving UI tree. It uses synthetic data and an isolated shared loopback
 network namespace with no published ports or external network access.
 
-Production disaster recovery additionally requires a consistent database/PVC
+At the time of that synthetic drill, production recovery still required a consistent database/PVC
 backup set, protected credential recovery, database roles/extensions/ACLs,
 attachment-reference integrity, controller reconciliation and a timed restore of
 the actual data volume. A synthetic PostgreSQL restore does not establish an RPO
 or RTO for the production database, nor does a UI rollback establish support for
-downgrading database schemas. Full commercial acceptance remains gated on those
-operational checks and supported version combinations.
+downgrading database schemas. Supported version combinations and a complete
+infrastructure recovery procedure remain separate from this application's tested
+recovery path. The later [application recovery report](application-recovery-20261026.md)
+records which production-data and original-secret checks have now been exercised.
 
 ## Production-source follow-up
 
 See the [2026-10-26 follow-up](acceptance-followup-20261026.md) for four-engine GUI,
 full source typecheck and actual production-backup restore results. It supplements
-the synthetic drill above and preserves explicit remaining recovery gates.
+the synthetic drill above and preserves the recovery gates outstanding at that
+point. The subsequent [application recovery report](application-recovery-20261026.md)
+records their follow-through without rewriting the historical receipt.

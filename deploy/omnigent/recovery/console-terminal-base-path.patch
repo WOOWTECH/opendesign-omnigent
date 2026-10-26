@@ -1,0 +1,19 @@
+--- a/templates/console-configmap.yaml
++++ b/templates/console-configmap.yaml
+@@ -678,6 +678,7 @@
+
+     <script>
+     const TTYD_PORT = {{ .Values.console.service.ttydPort }};
++    const TTYD_BASE_PATH = {{ default "" .Values.console.externalPath | trimSuffix "/" | toJson }};
+
+     function switchTab(name) {
+       document.querySelectorAll('.tab').forEach((t, i) => {
+@@ -691,7 +692,7 @@
+         if (frame.src === 'about:blank') {
+           // Use same host but ttyd port
+           const loc = window.location;
+-          frame.src = loc.protocol + '//' + loc.hostname + ':' + TTYD_PORT;
++          frame.src = loc.protocol + '//' + loc.hostname + ':' + TTYD_PORT + TTYD_BASE_PATH + '/';
+         }
+       }
+       if (name === 'logs') refreshLogs();
