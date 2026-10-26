@@ -1,0 +1,3 @@
+# Minimal direct test dependencies; SDK supplies httpx and its runtime deps.
+pytest==9.0.3
+pytest-asyncio==1.4.0

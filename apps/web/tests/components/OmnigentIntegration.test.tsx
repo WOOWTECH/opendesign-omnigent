@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OmnigentIntegrationStatus } from '@open-design/contracts';
+import { I18nProvider } from '../../src/i18n';
 import { OmnigentIntegrationProvider, OMNIGENT_POLL_MS } from '../../src/components/OmnigentIntegrationProvider';
 import { OmnigentIntegrationSection } from '../../src/components/OmnigentIntegrationSection';
 import { OmnigentSetupDialog } from '../../src/components/OmnigentSetupDialog';
@@ -30,6 +31,27 @@ function status(patch: Partial<OmnigentIntegrationStatus> = {}): OmnigentIntegra
     verification: {}, onboarding: { projectId: 'setup-project', conversationId: 'setup-conversation' }, ...patch,
   };
 }
+// Readiness fields from svc244 connect-status.json (2026-10-25); host identity omitted.
+function fourEngineFailure(): OmnigentIntegrationStatus {
+  return status({
+    installationSource: 'bundled', phase: 'error', loginConfirmed: true,
+    server: 'https://omnigent.example', host: { connected: true, name: 'fixture-host' },
+    installedEngines: ['claude', 'codex', 'pi', 'opencode'],
+    engines: {
+      claude: { installed: true, ready: false, authStatus: 'needs-auth', version: '2.1.296', harness: 'claude-native', models: [] },
+      codex: { installed: true, ready: false, authStatus: 'needs-auth', version: '0.162.1', harness: 'codex-native', models: [] },
+      pi: { installed: true, ready: false, version: '1.1.0', harness: 'pi-native', models: [] },
+      opencode: { installed: true, ready: false, authStatus: 'needs-auth', version: '1.18.33', harness: 'opencode-native', models: [] },
+    },
+    verification: {
+      claude: { engine: 'claude', ok: false, cliVersion: '2.1.296', reason: 'ENGINE_NOT_READY' },
+      codex: { engine: 'codex', ok: false, cliVersion: '0.162.1', reason: 'ENGINE_NOT_READY' },
+      pi: { engine: 'pi', ok: false, cliVersion: '1.1.0', reason: 'MODELS_UNAVAILABLE' },
+      opencode: { engine: 'opencode', ok: false, cliVersion: '1.18.33', reason: 'ENGINE_NOT_READY' },
+    },
+    issue: { code: 'INCOMPLETE_CHAT_VERIFICATION', message: 'synthetic-private-output' },
+  });
+}
 function json(value: unknown, code = 200) { return new Response(JSON.stringify(value), { status: code }); }
 function renderIntegration() {
   return render(<OmnigentIntegrationProvider><OmnigentIntegrationSection /></OmnigentIntegrationProvider>);
@@ -41,6 +63,36 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('native Omnigent integration', () => {
+  it('leaves a bundled launcher idle until Configure creates a fresh setup form', async () => {
+    const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(json(
+      request?.method === 'POST' ? { ok: true, status: status({ installationSource: 'bundled' }) }
+        : status({ installationSource: 'bundled', onboarding: undefined }),
+    )));
+    vi.stubGlobal('fetch', fetch);
+    renderIntegration();
+    const configure = await screen.findByRole('button', { name: 'Configure' });
+    expect(screen.queryByTestId('omnigent-setup-dialog')).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([, request]) => request?.method === 'POST')).toHaveLength(0);
+    fireEvent.click(configure);
+    expect(await screen.findByTestId('omnigent-setup-dialog')).toBeTruthy();
+    expect(mocks.navigate).toHaveBeenCalledWith({ kind: 'project', projectId: 'setup-project', conversationId: 'setup-conversation', fileName: null });
+    for (const label of ['Server URL', 'Account', 'Password']) expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe('');
+  });
+
+  it('updates the bundled integration runtime without asking the plugin installer to replace it', async () => {
+    const current = status({ installationSource: 'bundled' });
+    const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(json(
+      request?.method === 'POST' ? { ok: true, status: current } : current,
+    )));
+    vi.stubGlobal('fetch', fetch);
+    renderIntegration();
+    fireEvent.click(await screen.findByRole('button', { name: 'Update plugin' }));
+    await waitFor(() => expect(fetch.mock.calls.filter(([, request]) => request?.method === 'POST')
+      .map(([, request]) => JSON.parse(request.body))).toEqual([{ action: 'update' }]));
+    expect(mocks.upgrade).not.toHaveBeenCalled();
+  });
+
   it('renders no Settings section while the Omnigent plugin is not installed', async () => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(json(status({ installed: false, enabled: false, onboarding: undefined }))));
     vi.stubGlobal('fetch', fetch);
@@ -214,6 +266,80 @@ describe('native Omnigent integration', () => {
     expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
   });
 
+  it.each([
+    { enabled: false }, { loginConfirmed: false }, { host: { connected: false, name: 'fixture-host' } },
+    { host: { connected: true } }, { installedEngines: [] }, { server: 'javascript:alert(1)' },
+  ] as Partial<OmnigentIntegrationStatus>[])('hides provider setup when the connection is not usable: %j', async patch => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...fourEngineFailure(), ...patch })));
+    renderIntegration();
+    await screen.findByTestId('omnigent-integration-section');
+    expect(screen.queryByTestId('omnigent-provider-guide')).toBeNull();
+  });
+  it('shows one shared provider guide for the confirmed host', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(fourEngineFailure())));
+    renderIntegration();
+    expect(await screen.findAllByTestId('omnigent-provider-guide')).toHaveLength(1);
+  });
+
+  it('guides the actual four-engine failure to native Local CLI without assuming Pi needs auth', async () => {
+    const onOpenAgentSettings = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(fourEngineFailure()))));
+    render(<OmnigentIntegrationProvider><OmnigentIntegrationSection onOpenAgentSettings={onOpenAgentSettings} /></OmnigentIntegrationProvider>);
+    await screen.findByRole('button', { name: 'Configure' });
+    for (const name of ['Claude Code', 'codex', 'pi', 'OpenCode']) {
+      const row = within(screen.getByText(name, { selector: 'strong' }).closest('li')!);
+      if (name === 'pi') {
+        expect(row.getByText('The engine model catalog is unavailable. Review provider and model settings in Local CLI, refresh status, and verify again.')).toBeTruthy();
+        expect(row.queryByText('Authentication required')).toBeNull();
+        expect(row.queryByText('Authenticate with the vendor CLI (sign in or add API credentials) before returning to OpenDesign.')).toBeNull();
+      } else {
+        expect(row.getByText('This installed agent is not ready. Review its setup in Local CLI, then verify again.')).toBeTruthy();
+        expect(row.getByText('Authentication required')).toBeTruthy();
+        expect(row.getByText('Authenticate with the vendor CLI (sign in or add API credentials) before returning to OpenDesign.')).toBeTruthy();
+      }
+      const action = row.getByRole('button', { name: 'Local CLI' });
+      expect(action).toHaveProperty('disabled', false);
+      fireEvent.click(action);
+    }
+    expect(onOpenAgentSettings).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole('status').textContent).toBe('Setup required');
+    expect(screen.getAllByText('Not verified')).toHaveLength(4);
+    for (const rawCode of ['ENGINE_NOT_READY', 'MODELS_UNAVAILABLE', 'synthetic-private-output']) expect(document.body.textContent).not.toContain(rawCode);
+    expect(screen.queryByText('The operation could not finish. Refresh the status and try again.')).toBeNull();
+  });
+
+  it.each([
+    [undefined, 'This installed agent is not ready. Review its setup in Local CLI, then verify again.'],
+    ['binary-missing', 'Claude Code is not installed or not in PATH.'],
+    ['version-too-low', 'This agent version is unsupported. Review the native Local CLI requirements.'],
+  ] as const)('keeps readiness guidance precise with authStatus %s and offers native setup', async (authStatus, message) => {
+    const onOpenAgentSettings = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(status({
+      installedEngines: ['claude'], engines: { claude: { installed: true, ready: false, authStatus } },
+      verification: { claude: { ok: false, reason: 'ENGINE_NOT_READY' } },
+    })))));
+    render(<OmnigentIntegrationProvider><OmnigentIntegrationSection onOpenAgentSettings={onOpenAgentSettings} /></OmnigentIntegrationProvider>);
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.queryByText('Authentication required')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Local CLI' }));
+    expect(onOpenAgentSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('translates the actual four-engine readiness and provider setup guidance in zh-TW', async () => {
+    const onOpenAgentSettings = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(fourEngineFailure()))));
+    render(<I18nProvider initial="zh-TW"><OmnigentIntegrationProvider>
+      <OmnigentIntegrationSection onOpenAgentSettings={onOpenAgentSettings} />
+    </OmnigentIntegrationProvider></I18nProvider>);
+    expect(await screen.findByText('代理模型列表無法使用。請在本機 CLI 中檢查供應商與模型設定，重新整理狀態後再次驗證。')).toBeTruthy();
+    expect(screen.getAllByText('此代理已安裝，但尚未就緒。請在本機 CLI 中檢查設定，然後重新驗證。')).toHaveLength(3);
+    expect(screen.getAllByText('需要認證')).toHaveLength(3);
+    const pi = within(screen.getByText('pi', { selector: 'strong' }).closest('li')!);
+    expect(pi.queryByText('需要認證')).toBeNull();
+    for (const action of screen.getAllByRole('button', { name: '本機 CLI' })) fireEvent.click(action);
+    expect(onOpenAgentSettings).toHaveBeenCalledTimes(4);
+  });
+
   it('downloads through native upgrade before backend update and preserves install on download failure', async () => {
     const fetch = vi.fn().mockImplementation((_url, request) => Promise.resolve(json(request?.method === 'POST' ? { ok: true, status: status() } : status())));
     vi.stubGlobal('fetch', fetch);
@@ -240,7 +366,7 @@ describe('native Omnigent integration', () => {
     })))));
     renderIntegration();
     expect(await screen.findByText('Engine verification timed out. Open the engine to review first-run setup, then verify again.')).toBeTruthy();
-    expect(screen.getByText('The engine model catalog is unavailable. Review engine setup, refresh status, and verify again.')).toBeTruthy();
+    expect(screen.getByText('The engine model catalog is unavailable. Review provider and model settings in Local CLI, refresh status, and verify again.')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Open engine' })[0]!);
     expect(mocks.open).toHaveBeenCalledWith('https://omnigent.example/c/claude-probe');
     expect(document.body.textContent).not.toContain('synthetic-private-output');

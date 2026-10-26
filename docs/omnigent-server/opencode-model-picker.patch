@@ -1,0 +1,1708 @@
+diff --git a/feature-map/composer.md b/feature-map/composer.md
+index 9ce75731d..472778644 100644
+--- a/feature-map/composer.md
++++ b/feature-map/composer.md
+@@ -68,6 +68,8 @@ and steers messages while the agent is busy.
+ - Hover the model/effort pill to see the tooltip.
+ - Pick a harness, then open its configuration for model, effort (Codex, Claude,
+   Pi), and permission mode before the session exists.
++- OpenCode offers its host's live model list in configuration, including custom
++  providers. It has no launch-time effort or permission-mode controls.
+ - Attach files or type `/` before the first send.
+ 
+ **Mobile** (either composer on a phone-sized viewport): the same controls with
+@@ -104,6 +106,11 @@ Tests under `tests/browser_ui/` stub every backend call and need no instance:
+ - **`model-picker`, new-session composer:**
+   `tests/e2e_ui/start_session/test_model_flows_prelaunch.py::test_claude_default_entry_names_the_true_default`,
+   `tests/e2e_ui/start_session/test_composer_transition.py::test_selected_model_survives_delayed_create`
++- **OpenCode model picker:** `web/src/shell/NewChatDialog.test.tsx`, describe
++  `NewChatLandingScreen OpenCode model picker`, covers provider-qualified IDs,
++  delayed and failed catalogs, saved choices, and host/harness isolation.
++  Manually open **OpenCode → Edit** on a host with a custom provider, select a
++  model, send a short message, and verify the reply. Repeat on a phone viewport.
+ - **`effort-picker`, new-session composer:**
+   `tests/e2e_ui/start_session/test_codex_effort_prelaunch.py::test_new_codex_session_gear_offers_reasoning_effort`
+ - **`effort-terminal-mirror`:**
+diff --git a/feature-map/sessions.md b/feature-map/sessions.md
+index 933d87c42..e4c45cc46 100644
+--- a/feature-map/sessions.md
++++ b/feature-map/sessions.md
+@@ -56,6 +56,9 @@ renames. Sub-agent sessions hide owner-only actions.
+ turns. The header's Fork action copies the whole session instead. In either
+ dialog, keep the agent or choose another built-in or custom agent. To make a
+ custom agent available, first run a session using its spec file.
++When changing the execution host, the fork waits for that host's model catalog
++before retaining a selected or inherited model. An unavailable model resets to
++the harness default; a model shared by both hosts remains selected.
+ 
+ **Archived view:** switch the sidebar to archived sessions and filter by project.
+ 
+diff --git a/web/src/lib/nativeCodingAgents.test.ts b/web/src/lib/nativeCodingAgents.test.ts
+index d74cc89f0..1a2ac8b26 100644
+--- a/web/src/lib/nativeCodingAgents.test.ts
++++ b/web/src/lib/nativeCodingAgents.test.ts
+@@ -26,6 +26,21 @@ describe("nativeCodingAgentForHarness", () => {
+     expect(nativeCodingAgentForHarness("opencode-native")?.key).toBe("opencode");
+   });
+ 
++  it("gives OpenCode only the model picker capability", () => {
++    expect(nativeCodingAgentForHarness("opencode-native")?.capabilities).toEqual(["modelPicker"]);
++  });
++
++  it.each([
++    { name: "custom-opencode", harness: "opencode-native" },
++    { name: "custom-opencode", harness: "native-opencode" },
++    { name: "opencode-native-ui", harness: null },
++  ])("resolves OpenCode model picking without permission controls for %j", (agent) => {
++    expect(nativeAgentHasCapability(agent, "modelPicker")).toBe(true);
++    expect(nativeAgentHasCapability(agent, "approvalMode")).toBe(false);
++    expect(nativeAgentHasCapability(agent, "permissionMode")).toBe(false);
++    expect(nativeAgentHasCapability(agent, "skipPermissions")).toBe(false);
++  });
++
+   it("folds the reversed native-opencode alias to the opencode-native spec", () => {
+     expect(nativeCodingAgentForHarness("native-opencode")).toBe(
+       nativeCodingAgentForHarness("opencode-native"),
+diff --git a/web/src/lib/nativeCodingAgents.ts b/web/src/lib/nativeCodingAgents.ts
+index c0d324cda..6657d87b6 100644
+--- a/web/src/lib/nativeCodingAgents.ts
++++ b/web/src/lib/nativeCodingAgents.ts
+@@ -138,16 +138,8 @@ export const NATIVE_CODING_AGENTS = [
+     displayName: "OpenCode",
+     iconKind: "opencode",
+     sortRank: 25,
+-    // No capabilities → no permission picker. OpenCode has no claude-style
+-    // permission-mode surface to mirror: its native modes are the `build`
+-    // (allow-by-default) and `plan` primary agents, switched at runtime via Tab
+-    // inside the TUI — and `opencode attach` (how the runner launches it) has
+-    // no `--agent` flag to preset one anyway. The runner already forces
+-    // `permission: "ask"` so tools route through the Omnigent policy engine, so
+-    // a launch-time picker would mirror nothing. (Previously declared Codex's
+-    // `approvalMode`, whose `--sandbox`/`--ask-for-approval` presets aren't
+-    // understood by `opencode attach` and crashed the TUI on any non-default
+-    // pick.)
++    capabilities: ["modelPicker"],
++    // OpenCode has no launch-time permission-mode flag; tools still use policy approval.
+   },
+   {
+     // Devin's native TUI (Cognition). Replaced the built-in ACP row, removed in
+diff --git a/web/src/lib/newChatPickerCache.test.ts b/web/src/lib/newChatPickerCache.test.ts
+index f24006b31..a1ee05b7a 100644
+--- a/web/src/lib/newChatPickerCache.test.ts
++++ b/web/src/lib/newChatPickerCache.test.ts
+@@ -61,6 +61,7 @@ const options: NewChatPickerOptions = {
+       },
+     ],
+     pi: [],
++    opencode: [{ id: "gateway/example-chat", displayName: "Gateway chat", isDefault: true }],
+   },
+ };
+ let key: string;
+diff --git a/web/src/lib/newChatPickerCache.ts b/web/src/lib/newChatPickerCache.ts
+index eee261268..eeb114084 100644
+--- a/web/src/lib/newChatPickerCache.ts
++++ b/web/src/lib/newChatPickerCache.ts
+@@ -66,6 +66,7 @@ const pickerOptionsSchema = z.object({
+     claude: z.array(modelOptionSchema).optional(),
+     codex: z.array(modelOptionSchema).optional(),
+     pi: z.array(modelOptionSchema).optional(),
++    opencode: z.array(modelOptionSchema).optional(),
+   }),
+ });
+ const storedPickerOptionsSchema = pickerOptionsSchema.extend({
+@@ -168,7 +169,7 @@ export function readNewChatPickerOptionsCache(key: string | null): NewChatPicker
+   const { catalogVersion, ...options } = cached;
+   if (catalogVersion === undefined) {
+     // Older caches stored missing catalogs as empty arrays; only populated lists are known.
+-    for (const harness of ["claude", "codex", "pi"] as const) {
++    for (const harness of ["claude", "codex", "pi", "opencode"] as const) {
+       if (options.models[harness]?.length === 0) options.models[harness] = undefined;
+     }
+   }
+diff --git a/web/src/shell/ForkSessionDialog.test.tsx b/web/src/shell/ForkSessionDialog.test.tsx
+index 75e152d69..12a455efe 100644
+--- a/web/src/shell/ForkSessionDialog.test.tsx
++++ b/web/src/shell/ForkSessionDialog.test.tsx
+@@ -600,6 +600,177 @@ describe("ForkSessionDialog", () => {
+     });
+   });
+ 
++  describe("model validation after a host switch", () => {
++    const firstModels = [
++      { id: "provider-alpha/source", displayName: "Source model" },
++      { id: "provider-alpha/chosen", displayName: "Chosen model" },
++    ];
++    let destinationCatalog: Partial<ReturnType<typeof useHostModelOptions>>;
++
++    beforeEach(() => {
++      const agent = testAgent("ag_opencode", "opencode-native-ui", {
++        display_name: "OpenCode",
++        harness: "opencode-native",
++      });
++      setAgents([agent], "opencode-native");
++      useSessionAgentMock.mockReturnValue({ data: agent } as unknown as ReturnType<
++        typeof useSessionAgent
++      >);
++      useSessionMock.mockReturnValue({
++        session: { harness: "opencode-native", modelOverride: "provider-alpha/source" },
++        isLoading: false,
++        error: null,
++      } as ReturnType<typeof useSession>);
++      setHosts([host(), host({ host_id: "host_2", name: "second-host" })]);
++      destinationCatalog = { data: undefined, isLoading: true, error: null };
++      useHostModelOptionsMock.mockImplementation(
++        (hostId) =>
++          (hostId === "host_2"
++            ? destinationCatalog
++            : { data: firstModels, isLoading: false, error: null }) as ReturnType<
++            typeof useHostModelOptions
++          >,
++      );
++      forkSessionMock.mockResolvedValue({ id: "conv_fork" } as Awaited<
++        ReturnType<typeof forkSession>
++      >);
++      launchRunnerMock.mockResolvedValue({ runnerId: "runner_example" } as Awaited<
++        ReturnType<typeof launchRunner>
++      >);
++    });
++
++    function chooseModel() {
++      renderDialog({ sourceWorkspace: "/workspace/source", sourceHostId: "host_1" });
++      fireEvent.click(screen.getByTestId("fork-session-config-model"));
++      fireEvent.click(screen.getByRole("option", { name: "Chosen model" }));
++    }
++
++    function switchHost() {
++      openHostSelect();
++      fireEvent.click(screen.getByTestId("fork-session-host-option-host_2"));
++      fireEvent.change(screen.getByTestId("workspace-path-input"), {
++        target: { value: "/workspace/destination" },
++      });
++    }
++
++    it.each([true, false])(
++      "revalidates a touched model before cloning on another host (available: %s)",
++      async (available) => {
++        chooseModel();
++        switchHost();
++        expect(useHostModelOptionsMock).toHaveBeenCalledWith("host_2", "opencode-native", true);
++        expect(screen.getByTestId("fork-session-submit")).toBeDisabled();
++        fireEvent.click(screen.getByTestId("fork-session-submit"));
++        expect(forkSessionMock).not.toHaveBeenCalled();
++
++        destinationCatalog = {
++          data: available
++            ? firstModels
++            : [{ id: "provider-beta/other", displayName: "Other model" }],
++          isLoading: false,
++          error: null,
++        };
++        fireEvent.change(screen.getByTestId("fork-session-title-input"), {
++          target: { value: "Clone on second host" },
++        });
++        expect(screen.getByTestId("fork-session-config-model")).toHaveTextContent(
++          available ? "Chosen model" : "Default",
++        );
++        expect(screen.getByTestId("fork-session-submit")).toBeEnabled();
++        fireEvent.click(screen.getByTestId("fork-session-submit"));
++        await waitFor(() =>
++          expect(forkSessionMock).toHaveBeenCalledWith(
++            "conv_src",
++            expect.objectContaining({
++              config: { modelOverride: available ? "provider-alpha/chosen" : "default" },
++            }),
++          ),
++        );
++        await waitFor(() =>
++          expect(launchRunnerMock).toHaveBeenCalledWith(
++            "host_2",
++            "conv_fork",
++            "/workspace/destination",
++            undefined,
++          ),
++        );
++      },
++    );
++
++    it("revalidates an inherited source model when the host changes without a model edit", async () => {
++      renderDialog({ sourceWorkspace: "/workspace/source", sourceHostId: "host_1" });
++      expect(screen.getByTestId("fork-session-config-model")).toHaveTextContent("Source model");
++      switchHost();
++      expect(screen.getByTestId("fork-session-submit")).toBeDisabled();
++      destinationCatalog = { data: [], isLoading: false, error: null };
++      fireEvent.change(screen.getByTestId("fork-session-title-input"), {
++        target: { value: "Use destination default" },
++      });
++      expect(screen.getByTestId("fork-session-config-model")).toHaveTextContent("Default");
++      fireEvent.click(screen.getByTestId("fork-session-submit"));
++      await waitFor(() =>
++        expect(forkSessionMock).toHaveBeenCalledWith(
++          "conv_src",
++          expect.objectContaining({
++            config: { modelOverride: "default" },
++          }),
++        ),
++      );
++    });
++
++    it("keeps creation blocked when the destination catalog fails with retained data", async () => {
++      chooseModel();
++      destinationCatalog = {
++        data: firstModels,
++        isLoading: false,
++        error: new Error("Catalog unavailable"),
++      };
++      switchHost();
++      expect(screen.getByTestId("fork-session-submit")).toBeDisabled();
++      expect(screen.getByText("Catalog unavailable")).toBeVisible();
++      fireEvent.click(screen.getByTestId("fork-session-submit"));
++      expect(forkSessionMock).not.toHaveBeenCalled();
++
++      destinationCatalog = { data: firstModels, isLoading: false, error: null };
++      fireEvent.change(screen.getByTestId("fork-session-title-input"), {
++        target: { value: "Catalog recovered" },
++      });
++      expect(screen.getByTestId("fork-session-config-model")).toHaveTextContent("Chosen model");
++      fireEvent.click(screen.getByTestId("fork-session-submit"));
++      await waitFor(() =>
++        expect(forkSessionMock).toHaveBeenCalledWith(
++          "conv_src",
++          expect.objectContaining({
++            config: { modelOverride: "provider-alpha/chosen" },
++          }),
++        ),
++      );
++    });
++
++    it("preserves a touched model through a same-host catalog refresh", async () => {
++      chooseModel();
++      useHostModelOptionsMock.mockReturnValue({
++        data: [...firstModels, { id: "provider-alpha/new", displayName: "New model" }],
++        isLoading: false,
++        error: null,
++      } as ReturnType<typeof useHostModelOptions>);
++      openAdvanced();
++      fireEvent.change(screen.getByTestId("fork-session-title-input"), {
++        target: { value: "Same host refresh" },
++      });
++      expect(screen.getByTestId("fork-session-config-model")).toHaveTextContent("Chosen model");
++      fireEvent.click(screen.getByTestId("fork-session-submit"));
++      await waitFor(() =>
++        expect(forkSessionMock).toHaveBeenCalledWith(
++          "conv_src",
++          expect.objectContaining({
++            config: { modelOverride: "provider-alpha/chosen" },
++          }),
++        ),
++      );
++    });
++  });
++
+   it("arms Codex bypass only on an explicit pick, with a danger banner", async () => {
+     forkSessionMock.mockResolvedValue({
+       id: "conv_fork",
+diff --git a/web/src/shell/ForkSessionDialog.tsx b/web/src/shell/ForkSessionDialog.tsx
+index a3520bea5..dc6f961aa 100644
+--- a/web/src/shell/ForkSessionDialog.tsx
++++ b/web/src/shell/ForkSessionDialog.tsx
+@@ -195,6 +195,12 @@ export interface ForkRunConfigValue {
+   codexBypassSandbox?: boolean;
+ }
+ 
++interface ForkRunConfigState {
++  value: ForkRunConfigValue;
++  hostId: string | null;
++  ready: boolean;
++}
++
+ /**
+  * Model / effort / permission-mode pickers for a fork, mirroring the
+  * new-session dialog's harness-config rows. Only rendered for a NATIVE target
+@@ -226,6 +232,7 @@ export interface ForkRunConfigValue {
+  * @param sameAgentAsSource - Whether the fork keeps the source's exact agent;
+  *   seeds the launch-arg pickers (permission / approval / mode), which the
+  *   backend carries only on a same-agent fork.
++ * @param sourceHostId - Host where the source model was valid before a host switch.
+  * @param selectedHostId - Host whose model catalog feeds the model picker; null
+  *   leaves it on Default until a host is chosen.
+  * @param onChange - Reports the ready-to-send value on every change.
+@@ -236,6 +243,7 @@ function ForkRunConfig({
+   sourceSession,
+   sameFamilyAsSource,
+   sameAgentAsSource,
++  sourceHostId,
+   selectedHostId,
+   onChange,
+ }: {
+@@ -244,8 +252,9 @@ function ForkRunConfig({
+   sourceSession: Session | null;
+   sameFamilyAsSource: boolean;
+   sameAgentAsSource: boolean;
++  sourceHostId: string | null;
+   selectedHostId: string | null;
+-  onChange: (value: ForkRunConfigValue) => void;
++  onChange: (value: ForkRunConfigState) => void;
+ }) {
+   const hasPermission = nativeAgentHasCapability(targetAgent, "permissionMode");
+   const hasApproval = nativeAgentHasCapability(targetAgent, "approvalMode");
+@@ -261,11 +270,11 @@ function ForkRunConfig({
+   // native harnesses that expose a picker resolve a catalog; others pass a
+   // harmless unused harness key with the query disabled.
+   const catalogHarness = showModel && targetHarness ? targetHarness : "claude-native";
+-  const { data: hostModelOptions, isLoading: modelsLoading } = useHostModelOptions(
+-    selectedHostId,
+-    catalogHarness,
+-    showModel && selectedHostId !== null,
+-  );
++  const {
++    data: hostModelOptions,
++    isLoading: modelsLoading,
++    error: modelsError,
++  } = useHostModelOptions(selectedHostId, catalogHarness, showModel && selectedHostId !== null);
+   const modelOptions = useMemo(
+     () =>
+       (hostModelOptions ?? []).map((option) => ({
+@@ -347,6 +356,7 @@ function ForkRunConfig({
+   }, [isCodex, sameAgentAsSource, sourceSession, hasApproval, hasCursor, hasAgySkip]);
+ 
+   const [model, setModel] = useState(seededModel);
++  const [modelHostId, setModelHostId] = useState(sourceHostId ?? selectedHostId);
+   const [effort, setEffort] = useState(seededEffort);
+   const [permission, setPermission] = useState(seededPermission);
+   const [mode, setMode] = useState(seededModeValue);
+@@ -371,6 +381,9 @@ function ForkRunConfig({
+   const changeModel = (v: string) => {
+     setTouched((t) => ({ ...t, model: true }));
+     setModel(v);
++    setModelHostId(
++      modelsError || modelsLoading || hostModelOptions === undefined ? null : selectedHostId,
++    );
+   };
+   const changeEffort = (v: string) => {
+     setTouched((t) => ({ ...t, effort: true }));
+@@ -385,6 +398,39 @@ function ForkRunConfig({
+     setMode(v);
+   };
+ 
++  const modelToValidate = touched.model
++    ? model === MODEL_SELECT_DEFAULT
++      ? null
++      : model
++    : sameFamilyAsSource
++      ? sourceSession?.modelOverride
++      : null;
++  const modelNeedsValidation =
++    showModel && Boolean(modelToValidate) && modelHostId !== selectedHostId;
++  useEffect(() => {
++    if (
++      !modelNeedsValidation ||
++      selectedHostId === null ||
++      modelsLoading ||
++      modelsError ||
++      hostModelOptions === undefined
++    )
++      return;
++    // An unsupported model must explicitly clear the source's inherited value.
++    if (!hostModelOptions.some((option) => option.id === modelToValidate)) {
++      setModel(MODEL_SELECT_DEFAULT);
++      setTouched((previous) => ({ ...previous, model: true }));
++    }
++    setModelHostId(selectedHostId);
++  }, [
++    modelNeedsValidation,
++    selectedHostId,
++    modelsLoading,
++    modelsError,
++    hostModelOptions,
++    modelToValidate,
++  ]);
++
+   // Re-seed whenever the seeding basis changes (agent switch, source load), but
+   // never clobber a control the user already touched — a catalog refetch that
+   // recomputes `seededModel` must not overwrite a manual pick.
+@@ -435,8 +481,10 @@ function ForkRunConfig({
+     } else if (hasAgySkip && touched.mode) {
+       value.terminalLaunchArgs = AGY_NATIVE_SKIP_MODES.find((m) => m.value === mode)?.args ?? [];
+     }
+-    onChange(value);
++    onChange({ value, hostId: selectedHostId, ready: !modelNeedsValidation });
+   }, [
++    selectedHostId,
++    modelNeedsValidation,
+     showModel,
+     hasPermission,
+     hasApproval,
+@@ -473,6 +521,13 @@ function ForkRunConfig({
+             contentClassName={FORK_SELECT_ITEM_SM}
+             componentId="fork_session.config.model"
+           >
++            {modelNeedsValidation &&
++              model !== MODEL_SELECT_DEFAULT &&
++              !modelOptions.some((option) => option.id === model) && (
++                <SelectItem value={model} disabled>
++                  {nativeModelLabel({ id: model })}
++                </SelectItem>
++              )}
+             {modelsLoading && (
+               <div className="px-2.5 py-1 text-sm text-muted-foreground">Loading models…</div>
+             )}
+@@ -482,6 +537,14 @@ function ForkRunConfig({
+               </div>
+             )}
+           </RoutingModelSelect>
++          {modelNeedsValidation && (
++            <p role="status" className="text-sm text-muted-foreground">
++              {modelsError?.message ??
++                (selectedHostId === null
++                  ? "Choose the harness default to use this execution target."
++                  : "Checking model availability on this host…")}
++            </p>
++          )}
+         </ForkConfigRow>
+       )}
+ 
+@@ -708,7 +771,11 @@ export function ForkSessionForm({
+   // Ready-to-send model/effort/permission overrides from the run-config
+   // section. Empty until that section (rendered only for a native target)
+   // reports its seeded value.
+-  const [runConfig, setRunConfig] = useState<ForkRunConfigValue>({});
++  const [runConfig, setRunConfig] = useState<ForkRunConfigState>({
++    value: {},
++    hostId: null,
++    ready: true,
++  });
+   // Working directory + git worktree live behind "Advanced settings",
+   // collapsed by default (they prefill sensibly from the source, so the
+   // common "clone & start in the same place" path needs no input).
+@@ -1036,9 +1103,18 @@ export function ForkSessionForm({
+       : (sandboxRepoName ?? sandboxRepoUrl.trim());
+   // A coding source can only start once a live host + valid directory are
+   // picked; a sandbox clone needs neither — the server provisions both.
+-  const canSubmit = sandboxSelected
+-    ? sandboxRepoValid
+-    : !isCodingSource || (selectedHostOnline && workspaceValid);
++  const runConfigHostId = sandboxSelected
++    ? null
++    : isCodingSource
++      ? selectedHostId
++      : (sourceHostId ?? null);
++  const runConfigReady =
++    targetAgent === null || (runConfig.hostId === runConfigHostId && runConfig.ready);
++  const canSubmit =
++    runConfigReady &&
++    (sandboxSelected
++      ? sandboxRepoValid
++      : !isCodingSource || (selectedHostOnline && workspaceValid));
+ 
+   // Conflict hint: other *connected* sessions already working in the picked
+   // directory on this host (same wiring as NewChatDialog).
+@@ -1182,7 +1258,7 @@ export function ForkSessionForm({
+         title: trimmed === "" ? undefined : trimmed,
+         agentId: switching ? agentChoice : undefined,
+         upToResponseId: upToResponseId ?? undefined,
+-        config: runConfig,
++        config: runConfig.value,
+         // Sandbox clone: the server provisions the host, so the fork call
+         // carries the compute request itself and no launchRunner follows.
+         // The workspace is always explicit — the dialog's repository field
+@@ -1464,7 +1540,8 @@ export function ForkSessionForm({
+             sourceSession={sourceSession}
+             sameFamilyAsSource={sameFamilyAsSource}
+             sameAgentAsSource={sameAgentAsSource}
+-            selectedHostId={isCodingSource ? selectedHostId : (sourceHostId ?? null)}
++            sourceHostId={sourceHostId ?? null}
++            selectedHostId={runConfigHostId}
+             onChange={setRunConfig}
+           />
+         )}
+diff --git a/web/src/shell/NewChatDialog.test.tsx b/web/src/shell/NewChatDialog.test.tsx
+index a4e3b25c3..6fbd0abbd 100644
+--- a/web/src/shell/NewChatDialog.test.tsx
++++ b/web/src/shell/NewChatDialog.test.tsx
+@@ -390,6 +390,24 @@ const CODEX_MODEL_OPTIONS_RESULT = {
+     },
+   ],
+ };
++const OPENCODE_MODEL_OPTIONS_RESULT = {
++  ...SUCCESS_QUERY_STATE,
++  data: [
++    {
++      id: "provider-alpha/shared-model",
++      model: "provider-alpha/shared-model",
++      displayName: "Alpha shared model",
++      isDefault: true,
++    },
++    {
++      id: "provider-beta/shared-model",
++      model: "provider-beta/shared-model",
++      displayName: "Beta shared model",
++      // OpenCode has no effort control even when the catalog advertises one.
++      supportedReasoningEfforts: [{ reasoningEffort: "high" }],
++    },
++  ],
++};
+ const DEFAULT_LANDING_AGENTS: AvailableAgent[] = [
+   testAgent("a1", "claude-native-ui", { display_name: "Claude Code", harness: "claude-native" }),
+   testAgent("a2", "codex-native-ui", { display_name: "Codex", harness: "codex-native" }),
+@@ -1243,7 +1261,9 @@ function setupLandingMocks() {
+       ? CODEX_MODEL_OPTIONS_RESULT
+       : harness === "devin-native"
+         ? DEVIN_MODEL_OPTIONS_RESULT
+-        : CLAUDE_MODEL_OPTIONS_RESULT,
++        : harness === "opencode-native"
++          ? OPENCODE_MODEL_OPTIONS_RESULT
++          : CLAUDE_MODEL_OPTIONS_RESULT,
+   );
+   mockAgents(DEFAULT_LANDING_AGENTS);
+ }
+@@ -1787,7 +1807,7 @@ describe("NewChatLandingScreen initial picker loading", () => {
+ 
+   it.each([
+     { harness: "cursor-native", label: "Cursor" },
+-    { harness: "opencode-native", label: "OpenCode" },
++    { harness: "kiro-native", label: "Kiro" },
+   ])("does not request unrelated model catalogs for $label", ({ harness, label }) => {
+     mockAgents([
+       {
+@@ -3865,10 +3885,15 @@ describe("NewChatLandingScreen", () => {
+         fireEvent.click(screen.getByTestId("new-chat-landing-harness-more"));
+       }
+ 
+-      if (["claude", "codex", "pi", "devin"].includes(native.key)) {
++      if (["claude", "codex", "pi", "devin", "opencode"].includes(native.key)) {
+         fireEvent.click(screen.getByTestId(`new-chat-landing-agent-config-${agentId}`));
+         expect(screen.getByTestId("new-chat-landing-agent-models")).toBeVisible();
+-        expect(screen.getByTestId("new-chat-landing-agent-efforts")).toBeVisible();
++        if (native.key === "opencode") {
++          expect(screen.queryByTestId("new-chat-landing-agent-efforts")).toBeNull();
++          expect(screen.queryByTestId("new-chat-landing-permission-chip")).toBeNull();
++        } else {
++          expect(screen.getByTestId("new-chat-landing-agent-efforts")).toBeVisible();
++        }
+         expect(screen.queryByText("Advanced settings")).toBeNull();
+       } else {
+         expect(screen.queryByTestId(`new-chat-landing-agent-config-${agentId}`)).toBeNull();
+@@ -4004,8 +4029,18 @@ describe("NewChatLandingScreen", () => {
+     ...DEFAULT_LANDING_AGENTS,
+     testAgent("a3", "devin-native-ui", { display_name: "Devin", harness: "devin-native" }),
+     testAgent("a4", "pi-native-ui", { display_name: "Pi", harness: "pi-native" }),
++    testAgent("a_opencode", "opencode-native-ui", {
++      display_name: "OpenCode",
++      harness: "opencode-native",
++    }),
++  ];
++  const catalogHarnesses = [
++    "claude-native",
++    "codex-native",
++    "pi-native",
++    "devin-native",
++    "opencode-native",
+   ];
+-  const catalogHarnesses = ["claude-native", "codex-native", "pi-native", "devin-native"];
+   const readyCatalogs = Object.fromEntries(catalogHarnesses.map((harness) => [harness, true]));
+ 
+   it.each([undefined, readyCatalogs])(
+@@ -4035,6 +4070,7 @@ describe("NewChatLandingScreen", () => {
+     ["codex-native", "binary-missing", false],
+     ["pi-native", "version-too-low", false],
+     ["devin-native", false, false],
++    ["opencode-native", "binary-missing", false],
+   ])(
+     "skips unavailable %s and loads it when the host reports readiness",
+     (harness, readiness, poll) => {
+@@ -8232,6 +8268,310 @@ describe("NewChatLandingScreen @-file-mention", () => {
+ // entry's adjacent settings flyout on desktop and its in-menu page on mobile.
+ // ---------------------------------------------------------------------------
+ 
++describe("NewChatLandingScreen OpenCode model picker", () => {
++  const openCodeAgent = testAgent("a_opencode", "opencode-native-ui", {
++    display_name: "OpenCode",
++    harness: "opencode-native",
++  });
++  const piAgent = testAgent("a_pi", "pi-native-ui", { display_name: "Pi", harness: "pi-native" });
++  const piModels = {
++    ...SUCCESS_QUERY_STATE,
++    data: [{ id: "pi-provider/pi-only", displayName: "Pi only model", isDefault: true }],
++  };
++  let openCodeModels: Partial<ReturnType<typeof useHostModelOptions>>;
++
++  beforeEach(() => {
++    setupLandingMocks();
++    mockAgents([...DEFAULT_LANDING_AGENTS, piAgent, openCodeAgent]);
++    openCodeModels = OPENCODE_MODEL_OPTIONS_RESULT;
++    // Disabled queries can retain earlier successes; every harness has its own catalog.
++    useHostModelOptionsMock.mockImplementation(
++      (_hostId, harness) =>
++        (harness === "opencode-native"
++          ? openCodeModels
++          : harness === "pi-native"
++            ? piModels
++            : harness === "codex-native"
++              ? CODEX_MODEL_OPTIONS_RESULT
++              : CLAUDE_MODEL_OPTIONS_RESULT) as ReturnType<typeof useHostModelOptions>,
++    );
++    authenticatedFetchMock.mockResolvedValue({
++      ok: true,
++      json: async () => ({ id: "conv_opencode" }),
++    } as Response);
++  });
++  afterEach(() => {
++    cleanup();
++    localStorage.clear();
++  });
++
++  function expectModelOnlyControls() {
++    expect(screen.queryByTestId("new-chat-landing-agent-efforts")).toBeNull();
++    expect(screen.queryByTestId("new-chat-landing-agent-effort-value")).toBeNull();
++    expect(screen.queryByTestId("new-chat-landing-permission-chip")).toBeNull();
++  }
++
++  function expectOpenCodeRequest(body: Record<string, unknown>) {
++    expect(body.agent_id).toBe("a_opencode");
++    expect(body.reasoning_effort).toBeUndefined();
++    expect(body.terminal_launch_args).toBeUndefined();
++    expect(body.labels).toMatchObject({
++      "omnigent.ui": "terminal",
++      "omnigent.wrapper": "opencode-native-ui",
++    });
++    expect(body.labels).not.toHaveProperty(["omnigent.codex_native.bypass_sandbox"]);
++  }
++
++  it("waits for OpenCode's own host catalog before enabling submission", () => {
++    localStorage.setItem(LAST_AGENT_KEY, openCodeAgent.id);
++    openCodeModels = { ...PENDING_QUERY_STATE, data: undefined };
++    renderLanding();
++
++    expect(screen.getByRole("status", { name: "Loading session configuration" })).toBeVisible();
++    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++      target: { value: "Draft while OpenCode loads" },
++    });
++    expect(screen.getByTestId("new-chat-landing-input")).toBeEnabled();
++    expect(screen.getByTestId("new-chat-landing-submit")).toBeDisabled();
++    expect(useHostModelOptionsMock).toHaveBeenCalledWith("host_1", "opencode-native", true, {
++      poll: true,
++    });
++    for (const harness of ["claude-native", "codex-native", "pi-native"]) {
++      expect(useHostModelOptionsMock).toHaveBeenCalledWith("host_1", harness, false, {
++        poll: false,
++      });
++    }
++
++    openCodeModels = OPENCODE_MODEL_OPTIONS_RESULT;
++    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++      target: { value: "Draft after OpenCode loads" },
++    });
++    expect(screen.queryByTestId("new-chat-landing-picker-loading")).toBeNull();
++    expect(screen.getByTestId("new-chat-landing-input")).toHaveValue("Draft after OpenCode loads");
++    expect(screen.getByTestId("new-chat-landing-agent-select")).toHaveAccessibleName(
++      "OpenCode, Model Alpha shared model",
++    );
++    expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled();
++    openAgentModels(openCodeAgent.id);
++    expect(screen.getByRole("menuitemcheckbox", { name: "Beta shared model" })).toBeVisible();
++    expect(screen.queryByRole("menuitemcheckbox", { name: "Pi only model" })).toBeNull();
++    expect(screen.queryByRole("menuitemcheckbox", { name: "GPT-5.5" })).toBeNull();
++    expectModelOnlyControls();
++  });
++
++  it.each(["empty", "error", "error-with-retained-data"])(
++    "drops the previously selected model when OpenCode's catalog becomes %s",
++    async (state) => {
++      renderLanding();
++      openAgentModels(openCodeAgent.id);
++      pickPrimaryOption("model", "Beta shared model");
++      closePrimaryPicker();
++      expect(readHarnessOptions("opencode-native").model).toBe("provider-beta/shared-model");
++
++      openCodeModels =
++        state === "empty"
++          ? { ...SUCCESS_QUERY_STATE, data: [] }
++          : {
++              ...SUCCESS_QUERY_STATE,
++              data:
++                state === "error-with-retained-data"
++                  ? OPENCODE_MODEL_OPTIONS_RESULT.data
++                  : undefined,
++              error: new Error("OpenCode catalog unavailable"),
++              isError: true,
++              isSuccess: false,
++              status: "error",
++            };
++      fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++        target: { value: "Catalog refreshed" },
++      });
++      expect(screen.queryByTestId("new-chat-landing-picker-loading")).toBeNull();
++      expect(screen.getByTestId("new-chat-landing-agent-model-value")).toHaveTextContent(
++        "Models unavailable",
++      );
++      openAgentModels(openCodeAgent.id);
++      const models = screen.getByTestId("new-chat-landing-agent-models");
++      expect(
++        within(models).getByText(
++          state === "empty" ? "Models unavailable" : "OpenCode catalog unavailable",
++        ),
++      ).toBeVisible();
++      expect(screen.queryAllByRole("menuitemcheckbox")).toHaveLength(0);
++      expectModelOnlyControls();
++      closePrimaryPicker();
++      const { body } = await submitAndReadBody();
++      expect(body.model_override).toBeUndefined();
++      expectOpenCodeRequest(body);
++    },
++  );
++
++  it("loads the selected host's OpenCode catalog and drops a model only available on the previous host", async () => {
++    mockHosts([host("online"), host("online", 2)]);
++    localStorage.setItem(
++      RECENT_KEY,
++      JSON.stringify({
++        host_1: ["/workspace/first"],
++        host_2: ["/workspace/second"],
++      }),
++    );
++    let secondHostModels: Partial<ReturnType<typeof useHostModelOptions>> = {
++      ...PENDING_QUERY_STATE,
++      data: undefined,
++    };
++    const originalModels = useHostModelOptionsMock.getMockImplementation()!;
++    useHostModelOptionsMock.mockImplementation((hostId, harness, ...options) =>
++      hostId === "host_2" && harness === "opencode-native"
++        ? (secondHostModels as ReturnType<typeof useHostModelOptions>)
++        : originalModels(hostId, harness, ...options),
++    );
++    renderLanding();
++    openAgentModels(openCodeAgent.id);
++    pickPrimaryOption("model", "Beta shared model");
++    closePrimaryPicker();
++
++    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
++    fireEvent.click(screen.getByTestId("new-chat-landing-host-host_2"));
++    expect(screen.getByTestId("new-chat-landing-host-chip")).toHaveAccessibleName(/machine-2/);
++    expect(useHostModelOptionsMock).toHaveBeenCalledWith("host_2", "opencode-native", true, {
++      poll: true,
++    });
++    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++      target: { value: "Use the second host" },
++    });
++    expect(screen.getByTestId("new-chat-landing-submit")).toBeDisabled();
++
++    secondHostModels = {
++      ...SUCCESS_QUERY_STATE,
++      data: [{ id: "provider-gamma/host-two", displayName: "Host two model", isDefault: true }],
++    };
++    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++      target: { value: "Use the second host's model" },
++    });
++    openAgentModels(openCodeAgent.id);
++    expect(selectedPickerModel()).toHaveTextContent("Host two model");
++    expect(screen.queryByRole("menuitemcheckbox", { name: "Beta shared model" })).toBeNull();
++    expect(screen.queryByRole("menuitemcheckbox", { name: "Alpha shared model" })).toBeNull();
++    expectModelOnlyControls();
++    closePrimaryPicker();
++    const { body } = await submitAndReadBody();
++    expect(body.host_id).toBe("host_2");
++    expect(body.model_override).toBeUndefined();
++    expectOpenCodeRequest(body);
++  });
++
++  it("persists a provider-qualified model across a fresh visit and sends its exact ID", async () => {
++    renderLanding();
++    openAgentModels(openCodeAgent.id);
++    pickPrimaryOption("model", "Beta shared model");
++    expect(selectedPickerModel()).toHaveTextContent("Beta shared model");
++    expectModelOnlyControls();
++    closePrimaryPicker();
++    expect(readHarnessOptions("opencode-native").model).toBe("provider-beta/shared-model");
++
++    remountLanding();
++    expect(screen.getByTestId("new-chat-landing-agent-select")).toHaveAccessibleName(
++      "OpenCode, Model Beta shared model",
++    );
++    openAgentModels(openCodeAgent.id);
++    expect(selectedPickerModel()).toHaveTextContent("Beta shared model");
++    expectModelOnlyControls();
++    closePrimaryPicker();
++    const { body } = await submitAndReadBody();
++    expect(body.model_override).toBe("provider-beta/shared-model");
++    expectOpenCodeRequest(body);
++    expect(authenticatedFetchMock).toHaveBeenCalledWith(
++      "/v1/sessions",
++      expect.objectContaining({ method: "POST" }),
++    );
++  });
++
++  it.each([
++    { agentId: "a_pi", harness: "pi-native", model: "Pi only model" },
++    { agentId: "a2", harness: "codex-native", model: "GPT-5.6" },
++  ])(
++    "switches from $harness without leaking its catalog, effort, or permissions",
++    async ({ agentId, harness, model }) => {
++      renderLanding();
++      openAgentModels(agentId);
++      pickPrimaryOption("model", model);
++      pickPrimaryOption("effort", "High");
++      closePrimaryPicker();
++      if (harness === "codex-native") pickPermissionOption("bypass");
++      const sourceOptions = readHarnessOptions(harness);
++      expect(sourceOptions.effort).toBe("high");
++
++      openAgentModels(openCodeAgent.id);
++      expect(screen.queryByRole("menuitemcheckbox", { name: model })).toBeNull();
++      expect(selectedPickerModel()).toHaveTextContent("Alpha shared model");
++      pickPrimaryOption("model", "Beta shared model");
++      expectModelOnlyControls();
++      closePrimaryPicker();
++      expect(readHarnessOptions(harness)).toEqual(sourceOptions);
++
++      openAgentModels(agentId);
++      expect(selectedPickerModel()).toHaveTextContent(model);
++      expect(selectedPickerEffort()).toHaveTextContent("High");
++      closePrimaryPicker();
++      openAgentModels(openCodeAgent.id);
++      expect(selectedPickerModel()).toHaveTextContent("Beta shared model");
++      expectModelOnlyControls();
++      closePrimaryPicker();
++      const { body } = await submitAndReadBody();
++      expect(body.model_override).toBe("provider-beta/shared-model");
++      expectOpenCodeRequest(body);
++    },
++  );
++
++  it("restores a saved OpenCode model when its catalog arrives and ignores stale effort and approval preferences", async () => {
++    localStorage.setItem(LAST_AGENT_KEY, openCodeAgent.id);
++    localStorage.setItem(
++      HARNESS_OPTIONS_KEY,
++      JSON.stringify({
++        "opencode-native": {
++          model: "provider-beta/shared-model",
++          effort: "high",
++          mode: "full-access",
++        },
++      }),
++    );
++    openCodeModels = { ...PENDING_QUERY_STATE, data: undefined };
++    renderLanding();
++    expect(screen.getByTestId("new-chat-landing-picker-loading")).toBeVisible();
++    expect(readHarnessOptions("opencode-native").model).toBe("provider-beta/shared-model");
++
++    openCodeModels = OPENCODE_MODEL_OPTIONS_RESULT;
++    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
++      target: { value: "Use saved model" },
++    });
++    openAgentModels(openCodeAgent.id);
++    expect(selectedPickerModel()).toHaveTextContent("Beta shared model");
++    expectModelOnlyControls();
++    closePrimaryPicker();
++    const { body } = await submitAndReadBody();
++    expect(body.model_override).toBe("provider-beta/shared-model");
++    expectOpenCodeRequest(body);
++  });
++
++  it("clears a saved OpenCode model when the user chooses the harness default", async () => {
++    localStorage.setItem(LAST_AGENT_KEY, openCodeAgent.id);
++    localStorage.setItem(
++      HARNESS_OPTIONS_KEY,
++      JSON.stringify({
++        "opencode-native": { model: "provider-beta/shared-model" },
++      }),
++    );
++    renderLanding();
++    openAgentModels(openCodeAgent.id);
++    expect(selectedPickerModel()).toHaveTextContent("Beta shared model");
++    pickPrimaryOption("model", "Alpha shared model");
++    closePrimaryPicker();
++    expect(readHarnessOptions("opencode-native").model).toBe("");
++    const { body } = await submitAndReadBody();
++    expect(body.model_override).toBeUndefined();
++    expectOpenCodeRequest(body);
++  });
++});
++
+ describe("NewChatLandingScreen agent picker + Edit settings", () => {
+   beforeEach(setupLandingMocks);
+   afterEach(() => {
+@@ -8360,9 +8700,9 @@ describe("NewChatLandingScreen agent picker + Edit settings", () => {
+ 
+   it("hides Edit for a harness with no configurable settings", () => {
+     mockAgents([
+-      testAgent("a_bare", "opencode-native-ui", {
+-        display_name: "OpenCode",
+-        harness: "opencode-native",
++      testAgent("a_bare", "kiro-native-ui", {
++        display_name: "Kiro",
++        harness: "kiro-native",
+       }),
+     ]);
+     renderLanding({ smart_routing_enabled: true });
+diff --git a/web/src/shell/NewChatDialog.tsx b/web/src/shell/NewChatDialog.tsx
+index 8cdbfa572..60bbd4c57 100644
+--- a/web/src/shell/NewChatDialog.tsx
++++ b/web/src/shell/NewChatDialog.tsx
+@@ -3079,6 +3079,13 @@ export function NewChatLandingScreen() {
+     canLoadHostModels("pi-native"),
+     { poll: selectedNativeHarness === "pi-native" },
+   );
++  const {
++    data: hostOpenCodeModelOptions,
++    isLoading: hostOpenCodeModelsLoading,
++    error: hostOpenCodeModelsError,
++  } = useHostModelOptions(selectedHostId, "opencode-native", canLoadHostModels("opencode-native"), {
++    poll: selectedNativeHarness === "opencode-native",
++  });
+   // Keep this host's cached choices while requests wait for readiness.
+   // A fetched catalog, including an empty one, takes precedence.
+   const cachedHostModels =
+@@ -3123,6 +3130,15 @@ export function NewChatLandingScreen() {
+     hostPiModelsLoading,
+     cachedHostModels?.pi,
+   );
++  // A failed refetch can retain stale query data. Do not offer its model IDs.
++  const availableOpenCodeModels = hostOpenCodeModelsError
++    ? undefined
++    : availableHostModels(
++        "opencode-native",
++        hostOpenCodeModelOptions,
++        hostOpenCodeModelsLoading,
++        cachedHostModels?.opencode,
++      );
+   const {
+     data: hostDevinModelOptions,
+     isLoading: hostDevinModelsLoading,
+@@ -3206,6 +3222,12 @@ export function NewChatLandingScreen() {
+           })),
+     [availablePiModels, sandboxSelected, sandboxCatalog],
+   );
++  const openCodeModelOptions = useMemo(
++    () => (sandboxSelected ? (sandboxCatalog ?? []) : (availableOpenCodeModels ?? [])),
++    [availableOpenCodeModels, sandboxSelected, sandboxCatalog],
++  );
++  const modelOnlyOptions =
++    selectedNativeHarness === "opencode-native" ? openCodeModelOptions : piModelOptions;
+   const supportsPermissionMode = nativeAgentHasCapability(selectedAgent, "permissionMode");
+   const supportsDevinMode = nativeAgentHasCapability(selectedAgent, "devinMode");
+   const supportsApprovalMode = nativeAgentHasCapability(selectedAgent, "approvalMode");
+@@ -3296,15 +3318,15 @@ export function NewChatLandingScreen() {
+     }
+     if (supportsModelPicker && !supportsPermissionMode) {
+       const modelValue =
+-        piModelOptions.find((model) => model.id === pickedModel)?.displayName ??
+-        defaultModelLabel(piModelOptions);
++        modelOnlyOptions.find((model) => model.id === pickedModel)?.displayName ??
++        defaultModelLabel(modelOnlyOptions);
+       const thinkingLevelValue = normalizeEffortLabel(pickedEffort);
+       return [
+         { label: "Model", value: modelValue },
+         ...(selectedNativeHarness === "pi-native" && thinkingLevelValue
+           ? [{ label: "Thinking level", value: thinkingLevelValue }]
+           : []),
+-        ...sourceRows(piModelOptions),
++        ...sourceRows(modelOnlyOptions),
+       ];
+     }
+     if (supportsPermissionMode) {
+@@ -3412,7 +3434,7 @@ export function NewChatLandingScreen() {
+     pickedModel,
+     claudeModelOptions,
+     codexModelOptions,
+-    piModelOptions,
++    modelOnlyOptions,
+     pickedEffort,
+     permissionMode,
+     approvalMode,
+@@ -3440,9 +3462,11 @@ export function NewChatLandingScreen() {
+         ? devinModelOptions
+         : selectedNativeHarness === "pi-native"
+           ? piModelOptions
+-          : selectedNativeHarness === "codex-native"
+-            ? codexModelOptions
+-            : [];
++          : selectedNativeHarness === "opencode-native"
++            ? openCodeModelOptions
++            : selectedNativeHarness === "codex-native"
++              ? codexModelOptions
++              : [];
+   const [pickerModelSearch, setPickerModelSearch] = useState("");
+   const pickerModelsLoading =
+     sandboxCatalogPending ||
+@@ -3454,9 +3478,11 @@ export function NewChatLandingScreen() {
+           ? hostCodexModelsLoading
+           : selectedNativeHarness === "pi-native"
+             ? hostPiModelsLoading
+-            : selectedNativeHarness === "devin-native"
+-              ? hostDevinModelsLoading
+-              : false));
++            : selectedNativeHarness === "opencode-native"
++              ? hostOpenCodeModelsLoading
++              : selectedNativeHarness === "devin-native"
++                ? hostDevinModelsLoading
++                : false));
+   const pickerModelsError = sandboxSelected
+     ? sandboxCatalogError
+       ? new Error(sandboxCatalogError)
+@@ -3465,9 +3491,11 @@ export function NewChatLandingScreen() {
+       ? hostClaudeModelsError
+       : selectedNativeHarness === "codex-native"
+         ? hostCodexModelsError
+-        : selectedNativeHarness === "devin-native"
+-          ? hostDevinModelsError
+-          : null;
++        : selectedNativeHarness === "opencode-native"
++          ? hostOpenCodeModelsError
++          : selectedNativeHarness === "devin-native"
++            ? hostDevinModelsError
++            : null;
+   const pickerDataLoading =
+     sandboxCatalogPending ||
+     agentsLoading ||
+@@ -3521,6 +3549,7 @@ export function NewChatLandingScreen() {
+               claude: availableClaudeModels,
+               codex: availableCodexModels,
+               pi: availablePiModels,
++              opencode: availableOpenCodeModels,
+             },
+           }
+         : null,
+@@ -3533,6 +3562,7 @@ export function NewChatLandingScreen() {
+       availableClaudeModels,
+       availableCodexModels,
+       availablePiModels,
++      availableOpenCodeModels,
+     ],
+   );
+   useEffect(() => {
+@@ -3881,6 +3911,7 @@ export function NewChatLandingScreen() {
+     "claude-native": availableClaudeModels,
+     "codex-native": availableCodexModels,
+     "pi-native": availablePiModels,
++    "opencode-native": availableOpenCodeModels,
+     "devin-native": hostDevinModelOptions,
+   };
+   const pickerEntrySummaries = Object.fromEntries(
+@@ -3901,9 +3932,11 @@ export function NewChatLandingScreen() {
+             ? codexModelOptions
+             : native.iconKind === "pi"
+               ? piModelOptions
+-              : native.iconKind === "devin"
+-                ? devinModelOptions
+-                : [];
++              : native.iconKind === "opencode"
++                ? openCodeModelOptions
++                : native.iconKind === "devin"
++                  ? devinModelOptions
++                  : [];
+       const savedFusion = fusionOption(catalog)?.fusion;
+       // Preserve saved IDs while host data is absent; an empty result is authoritative.
+       const hostCatalogUnavailable =
+@@ -3998,8 +4031,8 @@ export function NewChatLandingScreen() {
+   // model seed falls back to the remembered pick, and the remembered-routing
+   // seed below stays live (an invalid pin must not suppress it).
+   const projectModelVocab =
+-    selectedNativeHarness === "pi-native"
+-      ? piModelOptions
++    selectedNativeHarness === "pi-native" || selectedNativeHarness === "opencode-native"
++      ? modelOnlyOptions
+       : selectedNativeHarness === "claude-native"
+         ? claudeModelOptions
+         : selectedNativeHarness === "devin-native"
+@@ -4052,6 +4085,15 @@ export function NewChatLandingScreen() {
+       options.some((m) => m.id === projectDefaultModel)
+         ? projectDefaultModel
+         : null;
++    if (selectedNativeHarness === "opencode-native") {
++      setPickedModel(
++        projectSeed(openCodeModelOptions) ??
++          (stored.model != null && openCodeModelOptions.some((model) => model.id === stored.model)
++            ? stored.model
++            : ""),
++      );
++      setPickedEffort("");
++    }
+     if (selectedNativeHarness === "pi-native") {
+       setPickedModel(
+         projectSeed(piModelOptions) ??
+@@ -4141,6 +4183,7 @@ export function NewChatLandingScreen() {
+     claudeModelOptions,
+     codexModelOptions,
+     piModelOptions,
++    openCodeModelOptions,
+     projectDefaultModel,
+   ]);
+   useEffect(() => {
+diff --git a/web/src/shell/ProjectSettingsDialog.test.tsx b/web/src/shell/ProjectSettingsDialog.test.tsx
+index 94c8db3c3..00df26cab 100644
+--- a/web/src/shell/ProjectSettingsDialog.test.tsx
++++ b/web/src/shell/ProjectSettingsDialog.test.tsx
+@@ -14,9 +14,13 @@ vi.mock("@/lib/projectsApi", () => ({
+ // Hoisted so the vi.mock factory can reference it; per-test overrides let
+ // cases control the host-resolved model catalog (default: empty, so the
+ // Claude static-alias fallback is what populates the picker).
+-const { hostModelOptionsMock } = vi.hoisted(() => ({ hostModelOptionsMock: vi.fn() }));
++const { hostModelOptionsMock, hostsMock, serverInfoMock } = vi.hoisted(() => ({
++  hostModelOptionsMock: vi.fn(),
++  hostsMock: vi.fn(),
++  serverInfoMock: vi.fn(),
++}));
+ vi.mock("@/hooks/useHosts", () => ({
+-  useHosts: () => ({ data: [{ host_id: "h1", name: "Laptop", owner: "me", status: "online" }] }),
++  useHosts: hostsMock,
+   useHostModelOptions: hostModelOptionsMock,
+ }));
+ // Hoisted so the vi.mock factory below can reference it; per-test overrides
+@@ -40,7 +44,7 @@ function pickerAgent(overrides: Record<string, unknown> = {}) {
+   };
+ }
+ vi.mock("@/lib/CapabilitiesContext", () => ({
+-  useServerInfo: () => ({ managed_sandboxes_enabled: false, sandbox_provider: null }),
++  useServerInfo: serverInfoMock,
+ }));
+ // The filesystem browser owns its own data-fetching; stub its explicit commit
+ // action so this suite can drive the shared dialog without filesystem plumbing.
+@@ -81,6 +85,15 @@ beforeEach(() => {
+   createMock.mockReset();
+   availableAgentsMock.mockReset();
+   availableAgentsMock.mockReturnValue({ data: [pickerAgent()] });
++  hostsMock.mockReset();
++  hostsMock.mockReturnValue({
++    data: [
++      { host_id: "h1", name: "Laptop", owner: "me", status: "online" },
++      { host_id: "h2", name: "Desktop", owner: "me", status: "online" },
++    ],
++  });
++  serverInfoMock.mockReset();
++  serverInfoMock.mockReturnValue({ managed_sandboxes_enabled: false, sandbox_provider: null });
+   hostModelOptionsMock.mockReset();
+   hostModelOptionsMock.mockReturnValue({ data: [] });
+   updateMock.mockResolvedValue({ id: "p_1", name: "Work", config: {} });
+@@ -420,4 +433,260 @@ describe("ProjectSettingsDialog", () => {
+       expect(updateMock).toHaveBeenCalledWith("p_1", { agent_id: "ag_claude", model: "opus" }),
+     );
+   });
++
++  describe("OpenCode model defaults", () => {
++    const sourceModels = [
++      { id: "provider-alpha/source", displayName: "Source model" },
++      { id: "provider-beta/chosen", displayName: "Chosen model" },
++    ];
++    let destinationCatalog: {
++      data: typeof sourceModels | undefined;
++      isLoading: boolean;
++      error: Error | null;
++    };
++
++    beforeEach(() => {
++      availableAgentsMock.mockReturnValue({
++        data: [
++          pickerAgent({
++            id: "ag_opencode",
++            name: "opencode-native-ui",
++            display_name: "OpenCode",
++            harness: "opencode-native",
++          }),
++        ],
++      });
++      getProjectMock.mockResolvedValue({
++        id: "p_1",
++        name: "Work",
++        config: { host_id: "h1", agent_id: "ag_opencode", model: "provider-alpha/source" },
++      });
++      destinationCatalog = { data: undefined, isLoading: true, error: null };
++      hostModelOptionsMock.mockImplementation((hostId: string) =>
++        hostId === "h2"
++          ? destinationCatalog
++          : { data: sourceModels, isLoading: false, error: null },
++      );
++    });
++
++    async function openSettings() {
++      renderDialog();
++      await waitFor(() =>
++        expect(screen.getByTestId("project-settings-model")).toHaveTextContent("Source model"),
++      );
++    }
++
++    function choose(field: "host" | "model", label: string) {
++      fireEvent.keyDown(screen.getByTestId(`project-settings-${field}`), { key: "ArrowDown" });
++      fireEvent.click(screen.getByRole("option", { name: label }));
++    }
++
++    function refreshCatalog() {
++      // Trigger a render after the mocked asynchronous query changes.
++      fireEvent.click(screen.getByTestId("project-settings-worktree"));
++      fireEvent.click(screen.getByTestId("project-settings-worktree"));
++    }
++
++    it("uses its own catalog and saves exact provider IDs without effort or permissions", async () => {
++      await openSettings();
++      expect(hostModelOptionsMock).toHaveBeenCalledWith("h1", "opencode-native", true);
++      choose("model", "Chosen model");
++      expect(
++        screen.queryByText(/reasoning effort|permission mode|approval mode/i),
++      ).not.toBeInTheDocument();
++      fireEvent.click(screen.getByTestId("project-settings-save"));
++      await waitFor(() =>
++        expect(updateMock).toHaveBeenCalledWith("p_1", {
++          host_id: "h1",
++          agent_id: "ag_opencode",
++          model: "provider-beta/chosen",
++        }),
++      );
++    });
++
++    it.each(["missing", "empty", "shared"])(
++      "validates the inherited model on host change (%s target catalog)",
++      async (catalog) => {
++        await openSettings();
++        choose("host", "Desktop");
++        expect(hostModelOptionsMock).toHaveBeenCalledWith("h2", "opencode-native", true);
++        expect(screen.getByTestId("project-settings-save")).toBeDisabled();
++        fireEvent.submit(screen.getByTestId("project-settings-save").closest("form")!);
++        expect(updateMock).not.toHaveBeenCalled();
++
++        destinationCatalog = {
++          data:
++            catalog === "shared"
++              ? sourceModels
++              : catalog === "empty"
++                ? []
++                : [{ id: "provider-other/source", displayName: "Source model" }],
++          isLoading: false,
++          error: null,
++        };
++        refreshCatalog();
++        expect(screen.getByTestId("project-settings-model")).toHaveTextContent(
++          catalog === "shared" ? "Source model" : "No default",
++        );
++        expect(screen.getByTestId("project-settings-save")).toBeEnabled();
++        fireEvent.click(screen.getByTestId("project-settings-save"));
++        await waitFor(() =>
++          expect(updateMock).toHaveBeenCalledWith("p_1", {
++            host_id: "h2",
++            agent_id: "ag_opencode",
++            ...(catalog === "shared" ? { model: "provider-alpha/source" } : {}),
++          }),
++        );
++      },
++    );
++
++    it.each(["loading", "error"])(
++      "blocks unverified models while %s and allows No default to unblock saving",
++      async (state) => {
++        await openSettings();
++        if (state === "error") {
++          destinationCatalog = {
++            data: sourceModels,
++            isLoading: false,
++            error: new Error("Catalog unavailable"),
++          };
++        }
++        choose("host", "Desktop");
++        expect(screen.getByTestId("project-settings-save")).toBeDisabled();
++        fireEvent.submit(screen.getByTestId("project-settings-save").closest("form")!);
++        expect(updateMock).not.toHaveBeenCalled();
++        choose("model", "No default");
++        expect(screen.getByTestId("project-settings-save")).toBeEnabled();
++        fireEvent.click(screen.getByTestId("project-settings-save"));
++        await waitFor(() =>
++          expect(updateMock).toHaveBeenCalledWith("p_1", {
++            host_id: "h2",
++            agent_id: "ag_opencode",
++          }),
++        );
++      },
++    );
++
++    it("revalidates an explicit model choice made from an errored catalog", async () => {
++      await openSettings();
++      hostModelOptionsMock.mockReturnValue({
++        data: sourceModels,
++        isLoading: false,
++        error: new Error("Catalog unavailable"),
++      });
++      refreshCatalog();
++      choose("model", "Chosen model");
++      expect(screen.getByTestId("project-settings-save")).toBeDisabled();
++      fireEvent.submit(screen.getByTestId("project-settings-save").closest("form")!);
++      expect(updateMock).not.toHaveBeenCalled();
++      hostModelOptionsMock.mockReturnValue({ data: [], isLoading: false, error: null });
++      refreshCatalog();
++      expect(screen.getByTestId("project-settings-model")).toHaveTextContent("No default");
++      fireEvent.click(screen.getByTestId("project-settings-save"));
++      await waitFor(() =>
++        expect(updateMock).toHaveBeenCalledWith("p_1", {
++          host_id: "h1",
++          agent_id: "ag_opencode",
++        }),
++      );
++    });
++
++    it.each(["sandbox", "offline"])(
++      "does not validate a %s target against another host's catalog",
++      async (target) => {
++        serverInfoMock.mockReturnValue({ managed_sandboxes_enabled: true, sandbox_provider: null });
++        await openSettings();
++        if (target === "sandbox") {
++          choose("host", "New Sandbox");
++        } else {
++          choose("host", "Desktop");
++          hostsMock.mockReturnValue({
++            data: [
++              { host_id: "h1", name: "Laptop", owner: "me", status: "online" },
++              { host_id: "h2", name: "Desktop", owner: "me", status: "offline" },
++            ],
++          });
++          refreshCatalog();
++        }
++        expect(hostModelOptionsMock).toHaveBeenLastCalledWith(null, "opencode-native", false);
++        expect(screen.getByTestId("project-settings-save")).toBeDisabled();
++        fireEvent.submit(screen.getByTestId("project-settings-save").closest("form")!);
++        expect(updateMock).not.toHaveBeenCalled();
++        choose("model", "No default");
++        expect(screen.getByTestId("project-settings-save")).toBeEnabled();
++        fireEvent.click(screen.getByTestId("project-settings-save"));
++        await waitFor(() =>
++          expect(updateMock).toHaveBeenCalledWith("p_1", {
++            host_id: target === "sandbox" ? "__sandbox__" : "h2",
++            agent_id: "ag_opencode",
++          }),
++        );
++      },
++    );
++
++    it("preserves a validated model through a same-host catalog refresh", async () => {
++      await openSettings();
++      choose("model", "Chosen model");
++      hostModelOptionsMock.mockReturnValue({ data: [], isLoading: false, error: null });
++      refreshCatalog();
++      expect(screen.getByTestId("project-settings-model")).toHaveTextContent(
++        "provider-beta/chosen",
++      );
++      fireEvent.click(screen.getByTestId("project-settings-save"));
++      await waitFor(() =>
++        expect(updateMock).toHaveBeenCalledWith("p_1", {
++          host_id: "h1",
++          agent_id: "ag_opencode",
++          model: "provider-beta/chosen",
++        }),
++      );
++    });
++
++    it("does not substitute Claude aliases when OpenCode's catalog is empty", async () => {
++      getProjectMock.mockResolvedValue({
++        id: "p_1",
++        name: "Work",
++        config: { host_id: "h1", agent_id: "ag_opencode" },
++      });
++      hostModelOptionsMock.mockReturnValue({ data: [], isLoading: false, error: null });
++      renderDialog();
++      await waitFor(() => expect(screen.getByTestId("project-settings-model")).toBeDisabled());
++      expect(screen.queryByText(/opus|sonnet|haiku/i)).not.toBeInTheDocument();
++      fireEvent.click(screen.getByTestId("project-settings-save"));
++      await waitFor(() =>
++        expect(updateMock).toHaveBeenCalledWith("p_1", {
++          host_id: "h1",
++          agent_id: "ag_opencode",
++        }),
++      );
++    });
++
++    it.each(["ready", "loading", "error"])(
++      "preserves an untouched unknown model when the catalog is %s",
++      async (state) => {
++        getProjectMock.mockResolvedValue({
++          id: "p_1",
++          name: "Work",
++          config: { host_id: "h1", agent_id: "ag_opencode", model: "custom/unknown" },
++        });
++        hostModelOptionsMock.mockReturnValue({
++          data: state === "loading" ? undefined : sourceModels,
++          isLoading: state === "loading",
++          error: state === "error" ? new Error("Catalog unavailable") : null,
++        });
++        renderDialog();
++        await waitFor(() =>
++          expect(screen.getByTestId("project-settings-model")).toHaveTextContent("custom/unknown"),
++        );
++        fireEvent.click(screen.getByTestId("project-settings-save"));
++        await waitFor(() =>
++          expect(updateMock).toHaveBeenCalledWith("p_1", {
++            host_id: "h1",
++            agent_id: "ag_opencode",
++            model: "custom/unknown",
++          }),
++        );
++      },
++    );
++  });
+ });
+diff --git a/web/src/shell/ProjectSettingsDialog.tsx b/web/src/shell/ProjectSettingsDialog.tsx
+index e3c59575d..7c212f948 100644
+--- a/web/src/shell/ProjectSettingsDialog.tsx
++++ b/web/src/shell/ProjectSettingsDialog.tsx
+@@ -7,7 +7,7 @@
+ // whether new sessions start in a fresh git worktree, the base branch a
+ // worktree forks from (which overrides the user-global default in Settings ›
+ // Git), and — when the default agent is a native harness with a model choice
+-// (Claude Code / Codex) — a default model for new sessions. Reasoning-effort /
++// (Claude Code / Codex / OpenCode) — a default model for new sessions. Reasoning-effort /
+ // harness stay per-agent run config, out of scope here. The host and agent
+ // pickers reuse the composer's components; the working directory reuses its
+ // filesystem browser (inline, so it scrolls inside the modal).
+@@ -140,6 +140,7 @@ export function ProjectSettingsDialog({
+   // Default model for new sessions, only meaningful when the default agent is
+   // a native harness with a model choice; NONE stores no default (unset key).
+   const [model, setModel] = useState<string>(NONE);
++  const [modelNeedsValidation, setModelNeedsValidation] = useState(false);
+   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+ 
+   // The agent picker and the host Select portal their dropdowns OUTSIDE
+@@ -190,6 +191,7 @@ export function ProjectSettingsDialog({
+     setBaseBranch(c.base_branch ?? "");
+     setAgentId(c.agent_id ?? null);
+     setModel(c.model ?? NONE);
++    setModelNeedsValidation(false);
+     setWorkspaceOpen(false);
+   }, [open, stored, loadFailed]);
+ 
+@@ -197,7 +199,7 @@ export function ProjectSettingsDialog({
+     e.preventDefault();
+     // Guard against submitting a blank draft seeded from a failed load, which
+     // the server would read as "clear the stored defaults".
+-    if (loadFailed) return;
++    if (loadFailed || modelValidationPending) return;
+     // Preserve config keys owned by other dialogs, then replace only the fields
+     // this form edits.
+     const config: ProjectConfig = { ...(stored ?? {}) };
+@@ -276,8 +278,12 @@ export function ProjectSettingsDialog({
+   // else the first online host (the composer's auto-pick) — without the
+   // fallback a Codex project (no static catalog) could never populate the
+   // picker unless a host default was also stored.
+-  const modelCatalogHostId = browsableHostId ?? onlineHosts[0]?.host_id ?? null;
+-  const { data: hostModelOptions } = useHostModelOptions(
++  const modelCatalogHostId = hostId === NONE ? (onlineHosts[0]?.host_id ?? null) : browsableHostId;
++  const {
++    data: hostModelOptions,
++    isLoading: modelsLoading,
++    error: modelsError,
++  } = useHostModelOptions(
+     modelCatalogHostId,
+     selectedNativeSpec?.harness ?? "",
+     harnessTakesModel && modelCatalogHostId !== null,
+@@ -292,6 +298,35 @@ export function ProjectSettingsDialog({
+       ? CLAUDE_NATIVE_MODELS.map((m) => ({ id: m.id, label: m.label }))
+       : [];
+   }, [hostModelOptions, selectedNativeSpec]);
++  // Preserve untouched stored IDs; only user edits require catalog validation.
++  const modelValidationPending =
++    modelNeedsValidation &&
++    model !== NONE &&
++    (harnessTakesModel || (agentId !== null && selectedAgent === null));
++  useEffect(() => {
++    if (
++      !open ||
++      !modelValidationPending ||
++      !harnessTakesModel ||
++      modelCatalogHostId === null ||
++      modelsLoading ||
++      modelsError ||
++      hostModelOptions === undefined
++    )
++      return;
++    if (!modelOptions.some((option) => option.id === model)) setModel(NONE);
++    setModelNeedsValidation(false);
++  }, [
++    open,
++    modelValidationPending,
++    harnessTakesModel,
++    modelCatalogHostId,
++    modelsLoading,
++    modelsError,
++    hostModelOptions,
++    modelOptions,
++    model,
++  ]);
+   // Keep a stored model the current options don't list as a labeled fallback
+   // item, so opening + saving the dialog doesn't silently drop the default.
+   const storedModelMissing = model !== NONE && !modelOptions.some((m) => m.id === model);
+@@ -329,7 +364,10 @@ export function ProjectSettingsDialog({
+           <Field label="Host" hint="Where new sessions run by default">
+             <Select
+               value={hostId}
+-              onValueChange={setHostId}
++              onValueChange={(value) => {
++                if (value !== hostId) setModelNeedsValidation(true);
++                setHostId(value);
++              }}
+               onOpenChange={onDropdownOpenChange}
+               disabled={isLoading}
+             >
+@@ -517,14 +555,21 @@ export function ProjectSettingsDialog({
+             <Field
+               label="Model"
+               hint={
+-                modelPickerEmpty
+-                  ? "No model catalog available — pick a Host default (or connect a host) to choose from its models"
+-                  : "Default model for new sessions with this agent"
++                modelValidationPending
++                  ? modelsError
++                    ? "Couldn't validate this model on the selected host. Choose No default or wait for the catalog to recover."
++                    : "Validating this model on the selected host. Choose No default to save without a model."
++                  : modelPickerEmpty
++                    ? "No model catalog available — pick a Host default (or connect a host) to choose from its models"
++                    : "Default model for new sessions with this agent"
+               }
+             >
+               <Select
+                 value={model}
+-                onValueChange={setModel}
++                onValueChange={(value) => {
++                  setModel(value);
++                  setModelNeedsValidation(value !== NONE);
++                }}
+                 onOpenChange={onDropdownOpenChange}
+                 disabled={isLoading || modelPickerEmpty}
+               >
+@@ -573,7 +618,7 @@ export function ProjectSettingsDialog({
+               type="submit"
+               data-testid="project-settings-save"
+               loading={updateConfig.isPending}
+-              disabled={isLoading || loadFailed}
++              disabled={isLoading || loadFailed || modelValidationPending}
+             >
+               Save
+             </Button>
+diff --git a/web/src/store/chatStore.test.ts b/web/src/store/chatStore.test.ts
+index 85d35b2c0..998980782 100644
+--- a/web/src/store/chatStore.test.ts
++++ b/web/src/store/chatStore.test.ts
+@@ -222,6 +222,20 @@ function mockResponse(
+   } as unknown as Response;
+ }
+ 
++function terminalRecoveryErrors(): ErrorBlock[] {
++  return [
++    ["required_terminal_exited", null],
++    ["required_terminal_exited", "persisted-terminal-error"],
++    ["executor_error", null],
++  ].map(([code, itemId]) => ({
++    type: "error",
++    ctx: { agent: null, depth: 0, turn: 0, timestamp: 0, responseId: "", itemId },
++    message: "Terminal recovery fixture",
++    source: "",
++    code: code!,
++  }));
++}
++
+ function streamResponse(): Response {
+   return mockResponse(null, { bodyStream: emptyStream() });
+ }
+@@ -972,6 +986,32 @@ describe("chatStore — lazy subtree usage", () => {
+       });
+     });
+ 
++    it.each(["idle", "running", "waiting", "failed"] as const)(
++      "preserves production terminal recovery semantics for a %s snapshot",
++      async (status) => {
++        routeUsage(
++          "conv_usage",
++          () => usage("conv_usage", 3.5),
++          snapshot("conv_usage", { status }),
++        );
++        await useChatStore.getState().switchTo("conv_usage");
++        await drainAsync();
++        const blocks = terminalRecoveryErrors();
++        useChatStore.setState({ blocks, sessionStatus: "failed" });
++
++        await advanceReconcileInterval();
++
++        expect(useChatStore.getState().sessionStatus).toBe(status);
++        expect(useChatStore.getState().blocks).toEqual(
++          status === "failed" ? blocks : blocks.slice(1),
++        );
++        if (status === "failed") expect(useChatStore.getState().blocks).toBe(blocks);
++        const recovered = useChatStore.getState().blocks;
++        await advanceReconcileInterval();
++        expect(useChatStore.getState().blocks).toBe(recovered);
++      },
++    );
++
+     it("deduplicates pending usage without blocking periodic status reconciliation", async () => {
+       let finishUsage!: (response: Response) => void;
+       const pending = new Promise<Response>((resolve) => {
+@@ -4446,6 +4486,28 @@ describe("chatStore — send while streaming (queueing)", () => {
+     expect(useChatStore.getState().blocks.filter((b) => b.type === "error")).toHaveLength(0);
+   });
+ 
++  it.each(["idle", "running", "waiting", "failed"] as const)(
++    "preserves production terminal recovery semantics for a %s status event",
++    (status) => {
++      const blocks = terminalRecoveryErrors();
++      useChatStore.setState({
++        conversationId: "conv_abc",
++        sessionStatus: "failed",
++        blocks,
++      });
++
++      handleSessionEvent({ type: "session_status", conversationId: "conv_abc", status });
++
++      expect(useChatStore.getState().blocks).toEqual(
++        status === "failed" ? blocks : blocks.slice(1),
++      );
++      if (status === "failed") expect(useChatStore.getState().blocks).toBe(blocks);
++      const recovered = useChatStore.getState().blocks;
++      handleSessionEvent({ type: "session_status", conversationId: "conv_abc", status });
++      expect(useChatStore.getState().blocks).toBe(recovered);
++    },
++  );
++
+   it("keeps a genuine failure card across a later live status edge", () => {
+     useChatStore.setState({
+       conversationId: "conv_abc",
+diff --git a/web/src/store/chatStore.ts b/web/src/store/chatStore.ts
+index b3732506a..5e54fc406 100644
+--- a/web/src/store/chatStore.ts
++++ b/web/src/store/chatStore.ts
+@@ -4649,6 +4649,20 @@ function reconnectStatusPatch(
+   return patch;
+ }
+ 
++// Clear only status-derived terminal failures once the runtime has recovered.
++function woowRecoveredTerminalErrors(blocks: AnyBlock[], status: Session["status"]): AnyBlock[] {
++  if (status !== "idle" && status !== "running" && status !== "waiting") return blocks;
++  const kept = blocks.filter(
++    (block) =>
++      !(
++        block.type === "error" &&
++        block.code === "required_terminal_exited" &&
++        block.ctx.itemId == null
++      ),
++  );
++  return kept.length === blocks.length ? blocks : kept;
++}
++
+ /**
+  * Reconcile the visible conversation's lifecycle from its persisted snapshot.
+  *
+@@ -4710,7 +4724,12 @@ async function reconcileActiveSessionStatus(
+   ) {
+     return;
+   }
+-  set((s) => reconnectStatusPatch(session, s, stateBeforeFetch.mcpStartupLaunch));
++  set((s) => {
++    const patch = reconnectStatusPatch(session, s, stateBeforeFetch.mcpStartupLaunch);
++    const recovered = woowRecoveredTerminalErrors(s.blocks, session.status);
++    if (recovered !== s.blocks) patch.blocks = recovered;
++    return patch;
++  });
+   if (session.usageIncluded === false) void hydrateSessionUsage(id);
+   const ignored = nativePreviewTombstonesByController.get(controller);
+   if (
+@@ -7264,6 +7283,9 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
+           );
+           if (reachable.length !== current.length) patch.blocks = reachable;
+         }
++        const current = patch.blocks ?? s.blocks;
++        const recovered = woowRecoveredTerminalErrors(current, event.status);
++        if (recovered !== current) patch.blocks = recovered;
+         return patch;
+       });
+       // Refetch the snapshot at turn START too: the runner persists

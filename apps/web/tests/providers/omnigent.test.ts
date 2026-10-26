@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchOmnigentStatus, isOmnigentPlugin, OmnigentRequestError,
-  omnigentProbeUrl, omnigentPublicUrl, runOmnigentAction, setupOmnigent, safeOmnigentIssueCode,
+  omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl, runOmnigentAction, setupOmnigent, safeOmnigentIssueCode,
 } from '../../src/providers/omnigent';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -47,12 +47,24 @@ describe('native Omnigent request boundary', () => {
     for (const url of ['https://u:p@example.com', 'https://example.com?token=p', 'https://example.com#p', 'javascript:alert(1)'])
       expect(omnigentPublicUrl(url)).toBeNull();
   });
+  it.each(['RATE_LIMITED', 'FREE_USAGE_LIMIT_REACHED', 'INSUFFICIENT_QUOTA', 'QUOTA_EXCEEDED'])('preserves only the structured provider code %s', code => {
+    expect(safeOmnigentIssueCode(code)).toBe(code);
+    expect(omnigentNeedsAgentAuth(code)).toBe(false);
+    expect(safeOmnigentIssueCode(code + ' private-detail')).toBe('REQUEST_FAILED');
+  });
   it('maps only known native-auth, model-catalog and timeout receipt reasons', () => {
     expect(safeOmnigentIssueCode('NATIVE_AUTH_REQUIRED')).toBe('NEEDS_AUTH');
     expect(safeOmnigentIssueCode('needs-auth')).toBe('NEEDS_AUTH');
     expect(safeOmnigentIssueCode('MODELS_UNAVAILABLE')).toBe('MODELS_UNAVAILABLE');
     expect(safeOmnigentIssueCode('OP_TIMEOUT')).toBe('OP_TIMEOUT');
     expect(safeOmnigentIssueCode('OP_TIMEOUT synthetic-private-output')).toBe('REQUEST_FAILED');
+  });
+  it('allowlists readiness without assuming it or a missing catalog means missing auth', () => {
+    expect(safeOmnigentIssueCode('ENGINE_NOT_READY')).toBe('ENGINE_NOT_READY');
+    expect(safeOmnigentIssueCode('ENGINE_NOT_READY synthetic-private-output')).toBe('REQUEST_FAILED');
+    expect(omnigentNeedsAgentAuth('ENGINE_NOT_READY')).toBe(false);
+    expect(omnigentNeedsAgentAuth('MODELS_UNAVAILABLE')).toBe(false);
+    expect(omnigentNeedsAgentAuth('NEEDS_AUTH')).toBe(true);
   });
   it('accepts only the matching existing session on the exact configured server and base path', () => {
     expect(omnigentProbeUrl('https://omnigent.example', { sessionId: 'probe', url: 'https://omnigent.example/c/probe' }))

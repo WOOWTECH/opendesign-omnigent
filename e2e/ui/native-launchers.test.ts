@@ -8,16 +8,13 @@ import { applyStandardMocks } from '@/playwright/mock-factory';
 const launchers = [
   { id: 'woow-cli-terminal', path: '/console/' },
   { id: 'woow-mcp-server', path: '/mcp-admin/' },
+  { id: 'woow-omnigent', path: '/settings/omnigent' },
   { id: 'woow-paseo', path: '/paseo/setup/' },
 ] as const;
 
-// Paseo is supplied by the optional image layer. The other manifests come
-// directly from this native CLI base so its launcher contract stays covered.
-const plugins = launchers.map(({ id, path }) => {
-  const manifest = id === 'woow-paseo'
-    ? { name: id, title: 'Paseo', version: '0.2.0', author: { name: 'WoowTech' },
-        description: 'Pair the official Paseo App with this workspace.', od: { launch: { path } } }
-    : JSON.parse(readFileSync(new URL(`../../plugins/_official/woow/${id}/open-design.json`, import.meta.url), 'utf8'));
+// Exercise every launcher using the manifest actually bundled in this source.
+const plugins = launchers.map(({ id }) => {
+  const manifest = JSON.parse(readFileSync(new URL(`../../plugins/_official/woow/${id}/open-design.json`, import.meta.url), 'utf8'));
   return InstalledPluginRecordSchema.parse({
     id, title: manifest.title, version: manifest.version, manifest,
     sourceKind: 'bundled', source: `/plugins/${id}`, fsPath: `/plugins/${id}`,
@@ -87,10 +84,10 @@ for (const width of [320, 390, 720, 721, 1440]) {
         }));
       }
       await page.goto('/plugins');
-      await expect(page.getByTestId('plugins-card-woow-paseo')).toBeVisible();
+      await expect(page.getByTestId('plugins-card-woow-omnigent')).toBeVisible();
     });
 
-    test('[P1] all three list Open links can be activated without navigating the card', async ({ page }, testInfo) => {
+    test('[P1] all four list Open links can be activated without navigating the card', async ({ page }, testInfo) => {
       for (const { id, path } of launchers) {
         await openLauncher(page, page.getByTestId(`plugins-card-open-${id}`), path, touch);
       }

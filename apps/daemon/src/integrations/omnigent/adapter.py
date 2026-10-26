@@ -20,6 +20,7 @@ from pathlib import Path
 import re
 import signal
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -411,6 +412,11 @@ class Adapter:
             if error.code != "NEEDS_SERVER":
                 raise
             server = None
+        if (server and self.request.get("allowManagedHost") is True
+                and not self.request.get("localOnly", False) and not host["managerRunning"]
+                and self.auth.token(server, refresh=False)):
+            self.ensure_host(server)
+            host = self.local_host()
         connectivity_error = None
         if server and host["id"] and not self.request.get("localOnly", False):
             try:
@@ -464,6 +470,10 @@ class Adapter:
         server = self.server()
         client = client or self.client_factory(server, read_only)
         host = self.local_host()
+        if (self.request.get("allowManagedHost") is True and not host["managerRunning"]
+                and self.auth.token(server, refresh=False)):
+            self.ensure_host(server)
+            host = self.local_host()
         hosts = self.api(client, "GET", "/v1/hosts").get("hosts")
         if not isinstance(hosts, list):
             raise AdapterError("invalid_response", "Omnigent hosts 清單格式不正確。")
@@ -588,6 +598,31 @@ class Adapter:
     def ensure_host(self, server: str) -> str:
         if self.local_host()["managerRunning"]:
             return "kit"
+        if self.request.get("allowManagedHost") is True:
+            kit = Path(__file__).resolve().parent / "host-kit"
+            cli = Path(sys.executable).parent / "omnigent"
+            if not cli.is_file() or not (kit / "supervisor.sh").is_file():
+                raise AdapterError("missing_dependency", "Omnigent host 執行元件尚未安裝。")
+            self.config_home.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            env = dict(os.environ)
+            env.update({"OG_BIN": str(cli), "OG_PYTHON": sys.executable,
+                        "OG_CONFIG_HOME": str(self.config_home), "OG_DATA_DIR": str(self.data_dir),
+                        "OG_STATE_DIR": str(self.data_dir / "omnigent-host"),
+                        "OG_HOST_ENABLED": "1", "OG_HOST_NAME": "OpenDesign · " + socket.gethostname(),
+                        "OG_WORKSPACE": str(self.workspace), "OG_IDLE_SECONDS": "2",
+                        "OG_UNSET_ENV": ",".join(filter(None, [env.get("OG_UNSET_ENV", ""), "OD_API_TOKEN"])),
+                        "OG_PASSTHROUGH": "OD_DAEMON_URL,NODE_PATH,NODE_OPTIONS,LITELLM_BASE_URL"})
+            # The native kit takes an exclusive volume lock before starting a host.
+            # No account information is passed in argv, environment additions, or logs.
+            subprocess.Popen(["/bin/sh", str(kit / "supervisor.sh")], env=env,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+            until = self.clock() + 5
+            while self.clock() < until:
+                if self.local_host()["managerRunning"]:
+                    return "kit"
+                self.sleep(0.1)
         raise AdapterError("kit_not_running", "原生 host supervisor 尚未執行，請先恢復部署服務。")
 
     def login(self) -> dict:
@@ -621,10 +656,12 @@ class Adapter:
 
     def connect(self) -> dict:
         server = self.server()
-        manager = self.ensure_host(server)
+        if self.request.get("allowManagedHost") is not True:
+            self.ensure_host(server)
         self._deadline = self.clock() + self.timeout(default=90)
         self.login()
         self.merge_config(server)
+        manager = self.ensure_host(server)
         client = self.client_factory(server, False)
         while True:
             result = self.catalog(client=client, read_only=False)
@@ -831,7 +868,11 @@ class Adapter:
                                 and isinstance(item.get("code"), str)
                                 and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", item["code"])), None)
                 if failure:
-                    result["reason"] = failure.upper() if failure.upper() in {"NEEDS_LOGIN", "AUTH_REQUIRED", "AUTH_FAILED", "ENGINE_NOT_READY", "NATIVE_AUTH_REQUIRED", "RUNNER_UNAVAILABLE", "MODEL_NOT_FOUND", "RATE_LIMITED"} else "ENGINE_FAILED"
+                    result["reason"] = failure.upper() if failure.upper() in {
+                        "NEEDS_LOGIN", "AUTH_REQUIRED", "AUTH_FAILED", "ENGINE_NOT_READY", "NATIVE_AUTH_REQUIRED",
+                        "RUNNER_UNAVAILABLE", "MODEL_NOT_FOUND", "RATE_LIMITED", "FREE_USAGE_LIMIT_REACHED",
+                        "INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED",
+                    } else "ENGINE_FAILED"
                     break
                 if self.clock() >= deadline:
                     break

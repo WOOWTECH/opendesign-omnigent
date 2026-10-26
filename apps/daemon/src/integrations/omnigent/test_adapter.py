@@ -52,6 +52,7 @@ class Service:
         self.mode = "accounts"
         self.sentinel = True
         self.item_error = None
+        self.item_error_message = "EXTRA_SECRET"
         self.message_error = None
         self.stop_error = None
         self.runner_online = True
@@ -107,7 +108,7 @@ class Service:
             return {"ok": True}
         if "/items?" in path:
             if self.item_error:
-                return {"data": [{"type": "error", "code": self.item_error, "message": "EXTRA_SECRET"}]}
+                return {"data": [{"type": "error", "code": self.item_error, "message": self.item_error_message}]}
             return {"data": [{"role": "assistant", "type": "message", "content": [
                 {"type": "output_text", "text": adapter.SENTINEL}]}] if self.sentinel else []}
         if path == "/v1/sessions/conv_owned":
@@ -406,11 +407,42 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual("OPERATION_CANCELLED", response["data"]["reason"])
         self.assertEqual("stopped", response["data"]["cleanup"])
 
+    def assert_structured_failure_stops_owned_session(self, code, reason):
+        self.service = Service()
+        self.service.auth = self.auth
+        self.clock = Clock()
+        self.service.item_error = code
+        self.service.item_error_message = "FREE_USAGE_LIMIT_REACHED INSUFFICIENT_QUOTA QUOTA_EXCEEDED EXTRA_SECRET"
+        instance = self.make(engine="opencode", timeoutSeconds=120)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            result = instance.verify()
+        self.assertFalse(result["ok"])
+        self.assertEqual(reason, result["reason"])
+        self.assertEqual("conv_owned", result["sessionId"])
+        self.assertEqual("stopped", result["cleanup"])
+        self.assertEqual(1, sum(c[0:2] == ("POST", "/v1/sessions") for c in self.service.calls))
+        self.assertEqual(1, sum("/items?" in c[1] for c in self.service.calls))
+        events = [c for c in self.service.calls if c[1].endswith("/events")]
+        self.assertEqual([("/v1/sessions/conv_owned/events", "message"),
+                          ("/v1/sessions/conv_owned/events", "stop_session")],
+                         [(c[1], c[2]["type"]) for c in events])
+        self.assertIs(False, events[-1][3]["refresh_auth"])
+        self.assertEqual(1, self.service.stop_snapshots)
+        self.assertEqual(3.0, self.clock.now)  # Only native startup settling; no reply polling delay.
+        self.assertEqual(set(), instance._owned_probes)
+        self.assertEqual({}, instance.probe_journal())
+        captured = json.dumps(result) + stdout.getvalue() + stderr.getvalue()
+        self.assertNotIn("EXTRA_SECRET", captured)
+        self.assertNotIn(self.service.item_error_message, captured)
+
+    def test_structured_provider_limits_end_verification_and_stop_only_owned_session(self):
+        for code in ("RATE_LIMITED", "FREE_USAGE_LIMIT_REACHED", "INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED"):
+            with self.subTest(code=code):
+                self.assert_structured_failure_stops_owned_session(code, code)
+
     def test_arbitrary_error_codes_do_not_escape(self):
-        self.service.item_error = "EXTRA_SECRET"
-        result = self.make(engine="opencode").verify()
-        self.assertEqual("ENGINE_FAILED", result["reason"])
-        self.assertNotIn("EXTRA_SECRET", json.dumps(result))
+        self.assert_structured_failure_stops_owned_session("EXTRA_SECRET", "ENGINE_FAILED")
 
     def test_acknowledged_stop_without_disconnected_runner_is_failure(self):
         self.service.runner_online = True

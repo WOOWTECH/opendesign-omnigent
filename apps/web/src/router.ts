@@ -46,6 +46,8 @@ export type Route =
        * select a specific brand without leaving the tab.
        */
       brandId?: string;
+      /** Native plugin launchers can address a specific settings page. */
+      settingsSection?: 'omnigent';
     }
   | { kind: 'design-system-create' }
   | { kind: 'design-system-detail'; designSystemId: string }
@@ -135,7 +137,9 @@ export function parseRoute(pathname: string): Route {
     return { kind: 'home', view: 'integrations' };
   }
   if (parts[0] === 'settings') {
-    return { kind: 'home', view: 'settings' };
+    return { kind: 'home', view: 'settings',
+      ...(parts.length === 2 && parts[1] === 'omnigent' ? { settingsSection: 'omnigent' as const } : {}),
+    };
   }
   if (parts[0] === 'collab-demo') {
     return { kind: 'collab-demo', projectId: parts[1] ? decodeURIComponent(parts[1]) : null };
@@ -192,7 +196,7 @@ export function buildPath(route: Route): string {
     if (route.view === 'members') return '/members';
     if (route.view === 'board') return '/board';
     if (route.view === 'workspace-settings') return '/workspace-settings';
-    if (route.view === 'settings') return '/settings';
+    if (route.view === 'settings') return route.settingsSection === 'omnigent' ? '/settings/omnigent' : '/settings';
     return '/';
   }
   if (route.kind === 'marketplace') return '/marketplace';

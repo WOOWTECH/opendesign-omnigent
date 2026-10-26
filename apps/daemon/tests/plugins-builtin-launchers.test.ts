@@ -23,6 +23,7 @@ const WOOW_TIER = path.resolve(import.meta.dirname, '../../../plugins/_official/
 const LAUNCHERS = [
   ['woow-cli-terminal', '/console/'],
   ['woow-mcp-server', '/mcp-admin/'],
+  ['woow-omnigent', '/settings/omnigent'],
   ['woow-paseo', '/paseo/setup/'],
 ] as const;
 
@@ -57,13 +58,17 @@ async function registerWoowTier() {
 }
 
 describe('bundled built-in launchers', () => {
-  it('discovers MCP Server, CLI Terminal and Paseo as bundled launchers', async () => {
+  it('discovers MCP Server, CLI Terminal, Omnigent and Paseo as bundled launchers', async () => {
     const result = await registerWoowTier();
     expect(result.warnings).toEqual([]);
 
     const byId = new Map(listInstalledPlugins(db).map((plugin) => [plugin.id, plugin]));
     const mcp = byId.get('woow-mcp-server');
     const cli = byId.get('woow-cli-terminal');
+    const omnigent = byId.get('woow-omnigent');
+    expect(omnigent?.sourceKind).toBe('bundled');
+    expect(omnigent?.version).toBe('0.1.6');
+    expect(builtInLaunchPath(omnigent!)).toBe('/settings/omnigent');
     const paseo = byId.get('woow-paseo');
     expect(paseo?.sourceKind).toBe('bundled');
     expect(builtInLaunchPath(paseo!)).toBe('/paseo/setup/');

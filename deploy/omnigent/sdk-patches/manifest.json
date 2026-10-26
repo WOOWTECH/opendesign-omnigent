@@ -1,23 +1,39 @@
 {
+  "schemaVersion": 2,
   "sdkVersion": "0.16.0",
-  "scope": "Pinned compatible OpenDesign derivative only; applied and verified on the authorized production instance",
-  "sdkRelativePath": "host/connect.py",
-  "targetSitePackagesGlob": "/opt/omnigent/venv/lib/python*/site-packages/omnigent",
-  "baseSha256": "1093a7c89de966c39e598f683b2651073abf613152e4e875676135bd28138ad1",
-  "replacementSha256": "2de8af76672e8008731c7fe4500eec059cd0d54b68091a8b364f631af911d75e",
-  "patch": "opencode-host-model-options.patch",
-  "cliBudgetSeconds": 10.0,
-  "hostBudgetSeconds": 12.0,
-  "serverRpcBudgetSeconds": 15.0,
-  "parserBaselineSha256": "8dc5c2add3bb4540887737a8f3d7ee2bbcfcc3c05a24bc14dc548e37648c5a0a",
-  "parserChanged": false,
-  "targetSdkFile": "/opt/omnigent/venv/lib/python3.12/site-packages/omnigent/host/connect.py",
-  "opencodeBinaryPath": "/usr/local/bin/opencode",
-  "tests": {
-    "command": "python3 -B -m unittest -v test_opencode_discovery",
-    "passed": 5,
-    "baselineRegressionExpectedExitCode": 1,
-    "livePatchApplied": true
-  },
-  "application": "apply.py with the adjacent unified diff; reject unknown baseline or result hashes"
+  "patches": [
+    {
+      "patch": "opencode-host-model-options.patch",
+      "patchSha256": "54766dd9edc5f49b6041660feb9911a362508520d7c200daf80e9e12422a3599",
+      "files": [
+        {
+          "sdkRelativePath": "host/connect.py",
+          "baseSha256": "1093a7c89de966c39e598f683b2651073abf613152e4e875676135bd28138ad1",
+          "replacementSha256": "2de8af76672e8008731c7fe4500eec059cd0d54b68091a8b364f631af911d75e"
+        }
+      ]
+    },
+    {
+      "patch": "opencode-quota-error.patch",
+      "patchSha256": "c9c7e01533b8f54b3628a74420b2492e406e5fe2d2a156f91ffe5ac440cc4d27",
+      "files": [
+        {
+          "sdkRelativePath": "harnesses/opencode_native/forwarder.py",
+          "baseSha256": "90d003af26cdf5a17f75bb2084e03b35a987577f79a42cbaa540130d82128527",
+          "replacementSha256": "79813db586b43a28adf790f5ba26c1d1f04f782e09833298fcb2f5009da555b2"
+        }
+      ]
+    },
+    {
+      "patch": "opencode-native-interrupt.patch",
+      "patchSha256": "ac611bedf3413b4d9ffe6cdcbad336b948d2a8e096efe917f5b626f6e97a3803",
+      "files": [
+        {
+          "sdkRelativePath": "runner/native/interrupt.py",
+          "baseSha256": "315c16d408214372bd8f567274e1bdbf945e9d783ff9cc81456cfc37fc651aad",
+          "replacementSha256": "422350957c6164cddb8f4d16b7c79c09561eace9bc1f43f802b6f79bbb562cb7"
+        }
+      ]
+    }
+  ]
 }

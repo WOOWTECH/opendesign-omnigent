@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Button } from '@open-design/components';
 import { useT } from '../i18n';
 import { openExternalUrl } from '../providers/registry';
-import { omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl } from '../providers/omnigent';
+import { omnigentNeedsAgentAuth, omnigentProbeUrl, omnigentPublicUrl, safeOmnigentIssueCode } from '../providers/omnigent';
 import { useOmnigentIntegration } from './OmnigentIntegrationProvider';
 import { OmnigentIssue } from './OmnigentIssue';
+import { OmnigentProviderGuide } from './OmnigentProviderGuide';
 import { AgentIcon } from './AgentIcon';
 import { Icon } from './Icon';
 import styles from './OmnigentIntegrationSection.module.css';
@@ -28,8 +29,7 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
     : busy ? t('omnigent.running')
     : status.phase === 'ready' ? t('omnigent.ready') : t('omnigent.needsSetup');
 
-  // WoowTech: the Omnigent plugin is not bundled for now. Show nothing in Settings until it is installed,
-  // so there is no dead "not installed" entry; installing the plugin brings the section back.
+  // The section is available only when this scope has the integration plugin.
   if (!status?.installed) return null;
 
   return <section className={`settings-section ${styles.section}`} data-testid="omnigent-integration-section">
@@ -43,12 +43,16 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
     {status?.installed ? <>
       <p className={styles.hint}>{status.host.connected ? t('omnigent.hostOnline') : t('omnigent.hostOffline')}
         {status.host.name ? ` · ${status.host.name}` : ''}</p>
+      {status.enabled && status.loginConfirmed && status.host.connected && status.host.name && serverUrl && installed.length > 0
+        ? <OmnigentProviderGuide key={status.host.id ?? status.host.name} hostName={status.host.name} serverUrl={serverUrl} engines={installed} /> : null}
       <h4>{t('omnigent.engines')}</h4>
       {installed.length === 0 ? <p className={styles.hint}>{t('omnigent.noEngines')}</p> :
         <ul className={styles.engines}>{installed.map((id) => {
           const receipt = status.verification[id];
           const failed = receipt?.ok === false;
           const needsAuth = failed && omnigentNeedsAgentAuth(receipt.reason);
+          const needsSetup = failed && ['ENGINE_NOT_READY', 'MODELS_UNAVAILABLE', 'MODEL_UNAVAILABLE'].includes(safeOmnigentIssueCode(receipt.reason));
+          const authStatus = status.engines[id]?.authStatus;
           const probeUrl = failed && status.enabled && status.loginConfirmed ? omnigentProbeUrl(status.server, receipt) : null;
           return <li key={id}>
           <AgentIcon id={id} size={20} /><strong>{id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id}</strong>
@@ -57,15 +61,16 @@ export function OmnigentIntegrationSection({ onOpenAgentSettings }: { onOpenAgen
           {failed ? <OmnigentIssue code={receipt.reason} engine /> : null}
           {probeUrl ? <Button size="sm" title={t('omnigent.openEngineHint')}
             onClick={() => void openExternalUrl(probeUrl)}>{t('omnigent.openEngine')}</Button> : null}
-          {status.engines[id]?.authStatus === 'needs-auth' || needsAuth ? <div className={styles.engineAdvice}>
+          {authStatus === 'needs-auth' || needsAuth ? <div className={styles.engineAdvice}>
             {!needsAuth ? <strong>{t('settings.agentAuthRequired')}</strong> : null}
             <p>{t('settings.agentInstall.stepAuth')}</p>
             <Button size="sm" disabled={!onOpenAgentSettings} onClick={onOpenAgentSettings}>{t('settings.localCli')}</Button>
-          </div> : status.engines[id]?.authStatus === 'binary-missing' ? <p className={styles.engineAdvice}>
-            {t('settings.testAgentMissing', { agentName: id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id })}
-          </p> : status.engines[id]?.authStatus === 'version-too-low' ? <p className={styles.engineAdvice}>
-            {t('omnigent.engineVersionOld')}
-          </p> : null}
+          </div> : needsSetup || authStatus === 'binary-missing' || authStatus === 'version-too-low' ? <div className={styles.engineAdvice}>
+            {authStatus === 'binary-missing' ? <p>
+              {t('settings.testAgentMissing', { agentName: id === 'claude' ? 'Claude Code' : id === 'opencode' ? 'OpenCode' : id })}
+            </p> : authStatus === 'version-too-low' ? <p>{t('omnigent.engineVersionOld')}</p> : null}
+            {needsSetup ? <Button size="sm" disabled={!onOpenAgentSettings} onClick={onOpenAgentSettings}>{t('settings.localCli')}</Button> : null}
+          </div> : null}
         </li>; })}</ul>}
       {status.modules?.length ? <>
         <h4>{t('omnigent.modules')}</h4>

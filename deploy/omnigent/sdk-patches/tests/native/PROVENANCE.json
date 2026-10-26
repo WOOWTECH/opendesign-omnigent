@@ -1,0 +1,84 @@
+{
+  "upstream_repository": "https://github.com/omnigent-ai/omnigent",
+  "upstream_commit": "12b5f67d2529b43eab7366a7288fb89f7587e48b",
+  "upstream_project_version": "0.17.0",
+  "target_runtime_version": "0.16.0 (entire installed SDK, with host model-options, quota and native interrupt patches applied)",
+  "license": "Apache-2.0",
+  "license_and_notice": "Copied unchanged from the upstream commit; NOTICE contains upstream project-wide attributions.",
+  "tests": [
+    {
+      "file": "test_opencode_native_forwarder.py",
+      "upstream_path": "tests/test_opencode_native_forwarder.py",
+      "upstream_sha256": "24811abdfc081cf3a2b5d08901ab79f9eb0d7d967841c806cce66d6d32f96ec2",
+      "eee5828_base_identical": true,
+      "test_body_sha256": "b03792f3b558e968e0d2d7c838e8bd78f9b00dad11f79fc2cf45c81903bd648c",
+      "vendored_sha256": "765d927de1f04bc7b6ccecad76bdbc954d137db9fcd1b3d1bbd8ffaff7b5ab24",
+      "modifications": [
+        "Apache-2.0 and provenance header",
+        "four quota retry regression tests appended"
+      ],
+      "test_count": 56
+    },
+    {
+      "file": "test_opencode_forwarder_reconnect.py",
+      "upstream_path": "tests/test_opencode_forwarder_reconnect.py",
+      "upstream_sha256": "bdd227a01a7410f7d24ee3b9fc8dc62f024baed3a14ce3e6dae921cfe4618b23",
+      "eee5828_base_identical": true,
+      "test_body_sha256": "bdd227a01a7410f7d24ee3b9fc8dc62f024baed3a14ce3e6dae921cfe4618b23",
+      "vendored_sha256": "33982e169414523b42f446e8ed4a0fa1788f21005ce14d5d4101b54aaf5f8c7c",
+      "modifications": [
+        "Apache-2.0 and provenance header"
+      ],
+      "test_count": 7
+    },
+    {
+      "file": "test_opencode_native_interrupt.py",
+      "source_path": "tests/runner/test_opencode_native_interrupt.py",
+      "upstream_path": null,
+      "license": "Apache-2.0",
+      "test_body_sha256": "b057f6a78ccd063e10440be8de4f5af59b4532168d2217756489d6b2f8f2196e",
+      "vendored_sha256": "3cb3907b6a48668213a4a20316fc2f5cb4331fffaf30809ed7d09bc83eaeaef2",
+      "test_count": 27,
+      "origin": "New real dispatcher + installed client HTTP regression; also 8 compatible other-harness/fallback cases."
+    }
+  ],
+  "expected_test_count": 90,
+  "new_cases": [
+    "test_quota_retry_is_visible_while_turn_remains_stoppable",
+    "test_quota_retry_before_any_assistant_message_is_visible",
+    "test_short_rate_limit_retries_can_recover_without_quota_notice",
+    "test_quota_notice_is_scoped_to_session_and_rearms_after_stop"
+  ],
+  "prior_validation": "63 passed using modified source and separately a captured installed 0.16 forwarder module with local repository dependencies. This is not whole-installed-0.16 verification.",
+  "candidate_validation": "PENDING: main agent runs all 90 bundled tests against the final candidate installed 0.16 SDK. No module replacement or source checkout injection is allowed. Live GUI abort/idle and subsequent model reply acceptance are separate requirements.",
+  "delivery_bundle_validation": {
+    "result": "63 passed in 0.26s",
+    "scope": "New standalone pytest.ini plus both vendored test files; upstream conftest and third-party plugin autoload disabled.",
+    "runtime": "local patched eee5828 source with existing test venv dependencies, NOT candidate whole-installed 0.16 SDK",
+    "pytest": "9.0.3",
+    "pytest_asyncio": "1.4.0",
+    "candidate_acceptance": "pending main-line candidate-container run",
+    "historical_scope": "Quota/reconnect only; predates the 27 interrupt tests and is not acceptance of the 90-test bundle."
+  },
+  "interrupt_validation": {
+    "source": "27 new + 20 existing native-dispatch + 63 forwarder/reconnect = 110 passed",
+    "captured_actual_016_module": "27 passed, local dependencies; full installed SDK acceptance still required",
+    "runtime_target": "omnigent/runner/native/interrupt.py",
+    "baseline_sha256": "315c16d408214372bd8f567274e1bdbf945e9d783ff9cc81456cfc37fc651aad",
+    "replacement_sha256": "422350957c6164cddb8f4d16b7c79c09561eace9bc1f43f802b6f79bbb562cb7",
+    "existing_017_dispatch_suite_on_016": "19 failed / 1 passed: constructor kwarg subagent_work_id_for_session not present; pending/grace-timer API also absent. Full file and logs retained in diagnostics/native-interrupt-reference and diagnostics/opencode-interrupt-existing-dispatch-016.log. Not counted in 90 compatible tests.",
+    "patch_file": "opencode-native-interrupt.patch",
+    "patch_sha256": "ac611bedf3413b4d9ffe6cdcbad336b948d2a8e096efe917f5b626f6e97a3803",
+    "bundled_test_count": 27,
+    "whole_installed_sdk_acceptance": "pending main-line final candidate run"
+  },
+  "bundled_suite": {
+    "expected_test_count": 90,
+    "forwarder_and_reconnect": 63,
+    "native_interrupt": 27,
+    "additional_source_only_dispatcher_tests": 20,
+    "source_only_total": 110,
+    "scope": "Only the three files listed in tests are bundled; the extra 20 dispatcher cases were run upstream, not vendored.",
+    "additional_source_only_dispatcher_016_result": "19 failed / 1 passed; incompatible 0.17 fixture/API, retained as reference only and excluded from the 90-test installed SDK suite."
+  }
+}

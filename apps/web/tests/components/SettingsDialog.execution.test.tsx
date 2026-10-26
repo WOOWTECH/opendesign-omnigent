@@ -92,6 +92,17 @@ vi.mock('../../src/providers/provider-models', () => ({
   fetchProviderModels: fetchProviderModelsMock,
 }));
 
+vi.mock('../../src/components/OmnigentIntegrationProvider', () => ({
+  useOmnigentIntegration: () => ({
+    status: {
+      installed: true, installationSource: 'bundled', enabled: false,
+      phase: 'needs-login', server: null, loginConfirmed: false,
+      host: { connected: false }, installedEngines: [], engines: {}, verification: {},
+    },
+    busy: false, errorCode: null, activate: vi.fn(), refresh: vi.fn(), run: vi.fn(),
+  }),
+}));
+
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({
     track: analyticsTrackMock,
@@ -406,6 +417,15 @@ function renderSettingsDialog(
     ...view,
   };
 }
+
+describe('SettingsDialog Omnigent destination', () => {
+  it('opens the dedicated Omnigent section with the existing connection controls', () => {
+    renderSettingsDialog({ mode: 'daemon' }, { initialSection: 'omnigent' });
+
+    expect(screen.getByTestId('settings-nav-omnigent').className).toContain('active');
+    expect(screen.getByTestId('omnigent-integration-section')).toBeTruthy();
+  });
+});
 
 function renderIntegrationsView(
   initial: Partial<AppConfig> = {},

@@ -1,0 +1,28 @@
+{
+  "version": "omnigent-ui-v0.17.0-od.1",
+  "component": "omnigent-server-web-ui",
+  "upstreamRepository": "https://github.com/omnigent-ai/omnigent",
+  "upstreamRelease": "v0.17.0",
+  "upstreamCommit": "12b5f67d2529b43eab7366a7288fb89f7587e48b",
+  "patchFile": "opencode-model-picker.patch",
+  "patchSha256": "9662d392a7a462d0d936555dcda6af6b5d8e3a528f12db54a07a9dbd77cb59ee",
+  "archiveFile": "web-ui.tar.gz",
+  "archiveSha256": "d9e826acdad2e1dd0865d02d0b586c2736d44a357d99d23a9cde1a81ff130a8a",
+  "archiveBytes": 7162715,
+  "originalBuildSourceCommit": "eee58280a917f7cf2c7984bbe71844423bc30d4c",
+  "originalBuildBaseCommit": "0e846b01509a79a7feb8fc0b55261aff30df419e",
+  "validation": {
+    "unitTestsPassed": 1364,
+    "typecheck": "passed",
+    "lint": "passed",
+    "realGuiEngineRouteCasesPassed": 4,
+    "viewportWidths": [
+      390,
+      1440
+    ]
+  },
+  "backendChanged": false,
+  "requiresServerAdministrator": true,
+  "pluginZipVersion": "0.1.5",
+  "license": "Apache-2.0"
+}

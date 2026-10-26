@@ -1,8 +1,25 @@
 import type { Dict } from '../types';
 
 export const fr: Dict = {
+  "omnigent.providerGuide": "Set up model providers",
+  "omnigent.providerHost": "Use this machine: {host}",
+  "omnigent.providerNativeHint": "In Omnigent, start a new chat and select the machine shown above. If the selected agent offers Set up, open it and choose Set up auth to enter an API key or gateway. Check the machine name in the dialog before saving.",
+  "omnigent.providerNativeOpen": "Open Omnigent setup",
+  "omnigent.providerTerminalHint": "For subscription sign-in or agents without a web auth form, open this OpenDesign terminal and run the matching command below. Complete the vendor sign-in in your browser.",
+  "omnigent.providerTerminalOpen": "Open CLI Terminal",
+  "omnigent.providerTerminalFallback": "If CLI Terminal is available, open it from Plugins. Otherwise use a terminal on this same machine.",
+  "omnigent.providerCopy": "Copy command",
+  "omnigent.providerCopied": "Command copied.",
+  "omnigent.providerCopyFailed": "Could not copy. Select and copy the command above.",
+  "omnigent.providerPiHint": "Then use /login to choose your provider and /model to select a model.",
+  "omnigent.providerFinish": "After sign-in, return here to Refresh status and Verify. Credentials belong in the native sign-in form, not the setup chat. A model is verified only after a real assistant reply.",
+  "omnigent.errorFreeQuota": "The free provider allowance has been reached. Review your provider plan or wait for the allowance to recover before verifying again.",
+  "omnigent.errorQuota": "The provider reported insufficient quota. Check your provider account and available allowance before verifying again.",
+  "omnigent.errorRateLimit": "The provider is rate limiting requests. Wait before verifying again.",
+
   'omnigent.errorEngineTimeout': "Engine verification timed out. Open the engine to review first-run setup, then verify again.",
-  'omnigent.errorModelCatalog': "The engine model catalog is unavailable. Review engine setup, refresh status, and verify again.",
+  'omnigent.errorModelCatalog': "The engine model catalog is unavailable. Review provider and model settings in Local CLI, refresh status, and verify again.",
+  'omnigent.errorEngineNotReady': "This installed agent is not ready. Review its setup in Local CLI, then verify again.",
   'omnigent.openEngine': "Open engine",
   'omnigent.openEngineHint': "Review engine setup in the existing verification conversation.",
 

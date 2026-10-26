@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-26",
+  "scopedChecksPassed": true,
+  "fullCommercialAcceptance": false,
+  "productionDeploymentChanged": false,
+  "pluginReleaseUnchanged": "0.1.6",
+  "sourceHashes": {
+    "safe_restore.py": "8219b439d2d7623d633a7aaece64c959a5439a764e2ebcb47688dc4d04fa645f",
+    "test_safe_restore.py": "08c58016db5fdd259d0b64afa861c8c68a8bb0d992dc5c0e6390987b5598fcce",
+    "verify_real_archives.py": "c8fcddb814d3161cad8e4298dd6f7addcfdbe345677e77db5928e6664b1d7b24"
+  },
+  "uiRestoreUtility": {
+    "unitTests": 31,
+    "normalModePassed": true,
+    "optimizedModePassed": true,
+    "realArchives": {
+      "archive_cases": 2,
+      "archives": [
+        {
+          "archive": "served-reconstruction.tar.gz",
+          "archive_sha256": "b058b9e129c81ff8aecaea8a24eae4504a528f36359ba0f7a4e9fad585007f0a",
+          "expanded_bytes": 83527882,
+          "file_count": 1559,
+          "index_sha256": "646e56ce02cfa7c9c8be1269540f65068419b4a2c6d1caca87e72cb9d3e7684a",
+          "inventory_sha256": "f1a1915e8e1939bf19b9af2394d230f6656ae395657d4cfa19c61e9df9d08e34"
+        },
+        {
+          "archive": "rollback-serving-tree.tar.gz",
+          "archive_sha256": "c73b2eb26184df45086aa3d0222e9175d895dc71526039808765b9379e193878",
+          "expanded_bytes": 83528022,
+          "file_count": 1559,
+          "index_sha256": "192d0fe850366e92041f659a4e269ac6120f51ef6b4e75e0850e2a8d436b20bd",
+          "inventory_sha256": "470f01b05d22378d31cacc5479bfd75008551a975794c31bea245ff1d40f9017"
+        }
+      ],
+      "changed_files": [
+        "index.html"
+      ],
+      "passed": true,
+      "unchanged_non_index_files": 1558
+    }
+  },
+  "nativeServerDrill": {
+    "database": "PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2)",
+    "serverBaseDigest": "sha256:31c83f122e2a2c0854997235ea5163596598933bc4faa4c12f619b3d9407cd4b",
+    "syntheticDataOnly": true,
+    "egressAvailable": false,
+    "publishedPorts": false,
+    "originalDatabaseAndVolumeDestroyedBeforeRestore": true,
+    "restoredFromReopenedBackupFiles": true,
+    "stages": [
+      {
+        "stage": "initial-native-server",
+        "time": "2026-10-26T04:07:23Z",
+        "health": true,
+        "nativeLogin": true,
+        "projectViaNativeApi": true,
+        "artifactMarkerOnDisk": true,
+        "savedSessionRestored": false,
+        "postRestoreWriteRead": false,
+        "entryAssetsVerified": 72,
+        "historyAssetsVerified": 2,
+        "restoredFilesVerified": 1559,
+        "missingAsset404": true,
+        "indexSha256": "646e56ce02cfa7c9c8be1269540f65068419b4a2c6d1caca87e72cb9d3e7684a",
+        "servedIndexSha256": "5594b0af50b9b260e9c6529b6cd82ee5623892de5871031316bc77d7c61e59f1"
+      },
+      {
+        "stage": "destroy-and-restore",
+        "time": "2026-10-26T04:07:51Z",
+        "health": true,
+        "nativeLogin": true,
+        "projectViaNativeApi": true,
+        "artifactMarkerOnDisk": true,
+        "savedSessionRestored": true,
+        "postRestoreWriteRead": true,
+        "entryAssetsVerified": 72,
+        "historyAssetsVerified": 2,
+        "restoredFilesVerified": 1559,
+        "missingAsset404": true,
+        "indexSha256": "646e56ce02cfa7c9c8be1269540f65068419b4a2c6d1caca87e72cb9d3e7684a",
+        "servedIndexSha256": "5594b0af50b9b260e9c6529b6cd82ee5623892de5871031316bc77d7c61e59f1"
+      },
+      {
+        "stage": "rollback-native-server",
+        "time": "2026-10-26T04:08:03Z",
+        "health": true,
+        "nativeLogin": true,
+        "projectViaNativeApi": true,
+        "artifactMarkerOnDisk": true,
+        "savedSessionRestored": true,
+        "postRestoreWriteRead": true,
+        "entryAssetsVerified": 72,
+        "historyAssetsVerified": 2,
+        "restoredFilesVerified": 1559,
+        "missingAsset404": true,
+        "indexSha256": "192d0fe850366e92041f659a4e269ac6120f51ef6b4e75e0850e2a8d436b20bd",
+        "servedIndexSha256": "9f7aab73d4bcd90d1b7ed6f0993271bad624a9242558e8f6b885fed9597726da"
+      },
+      {
+        "stage": "reupgrade-native-server",
+        "time": "2026-10-26T04:08:17Z",
+        "health": true,
+        "nativeLogin": true,
+        "projectViaNativeApi": true,
+        "artifactMarkerOnDisk": true,
+        "savedSessionRestored": true,
+        "postRestoreWriteRead": true,
+        "entryAssetsVerified": 72,
+        "historyAssetsVerified": 2,
+        "restoredFilesVerified": 1559,
+        "missingAsset404": true,
+        "indexSha256": "646e56ce02cfa7c9c8be1269540f65068419b4a2c6d1caca87e72cb9d3e7684a",
+        "servedIndexSha256": "5594b0af50b9b260e9c6529b6cd82ee5623892de5871031316bc77d7c61e59f1"
+      }
+    ],
+    "cleanupPassed": true,
+    "syntheticRecoverySeconds": 15.68
+  },
+  "sdkOfflineChecks": {
+    "checks": 29,
+    "passed": true,
+    "sdkVersion": "0.16.0",
+    "patchBundleVersion": "0.16.0-od.2",
+    "fullPackageDowngradeTested": false
+  },
+  "nativePluginZipLifecycle": {
+    "sequence": [
+      "0.1.5",
+      "0.1.6",
+      "0.1.5",
+      "0.1.6"
+    ],
+    "httpImportsPassed": true,
+    "bundledUpgradeHttpStatus": 409,
+    "bundledUpgradeError": "bundled-plugin",
+    "zipDowngradePersistsAcrossRestart": false,
+    "sdkUnchangedByZipImport": true
+  },
+  "nativeImageLifecycle": {
+    "sameSyntheticDataVolume": true,
+    "sequence": [
+      {
+        "index": 0,
+        "imageDigest": "sha256:daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b",
+        "bundledPluginVersion": "0.1.5",
+        "httpChecksPassed": true
+      },
+      {
+        "index": 1,
+        "imageDigest": "sha256:fab08ef4577491f78e3d277b8e96a4ba7348a6a6ee2bac4f5af97ac60bddc227",
+        "bundledPluginVersion": "0.1.6",
+        "httpChecksPassed": true
+      },
+      {
+        "index": 2,
+        "imageDigest": "sha256:daf04fb889bd0545b3af14b2422305f86d2e5b77346498f6e0ca3a6c05e82a0b",
+        "bundledPluginVersion": "0.1.5",
+        "httpChecksPassed": true
+      },
+      {
+        "index": 3,
+        "imageDigest": "sha256:fab08ef4577491f78e3d277b8e96a4ba7348a6a6ee2bac4f5af97ac60bddc227",
+        "bundledPluginVersion": "0.1.6",
+        "httpChecksPassed": true
+      }
+    ],
+    "allChecksPassed": true,
+    "resourcesRemoved": true,
+    "productionDataOrCredentialsUsed": false
+  },
+  "repositoryChecks": {
+    "guard": "passed",
+    "diffCheck": "passed",
+    "fullTypecheck": "blocked: packages/metatool node_modules missing; cannot resolve zod"
+  },
+  "remainingAcceptance": [
+    "A consistent backup and restore of the actual production database, PVCs and protected credentials.",
+    "Production roles, ACLs, extensions, attachment-reference integrity and PaaS/Helm reconciliation.",
+    "Production-scale RPO/RTO and additional supported image/database-schema combinations.",
+    "Authenticated multi-workspace/browser lifecycle and fresh four-engine model conversations after a restored production clone.",
+    "Power-loss publication durability and concurrent-process SDK patching."
+  ]
+}

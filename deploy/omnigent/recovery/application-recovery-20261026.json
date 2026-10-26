@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 3,
+  "date": "2026-10-26",
+  "title": "OD / Omnigent 應用層復原驗收",
+  "documentStatus": "final",
+  "applicationDrAccepted": true,
+  "acceptedAtUtc": "2026-10-26T11:21:13Z",
+  "scope": {
+    "level": "application-recovery-on-existing-k3s-infrastructure",
+    "nativeHelmReleases": 2,
+    "freshPvcCount": 4,
+    "freshVolumeRoles": [
+      "PostgreSQL",
+      "Omnigent data/artifacts",
+      "OD data",
+      "OD home"
+    ],
+    "included": "同一 PG snapshot + artifacts、OD volumes、原認證、原生 Helm/controllers、四引擎 GUI、Console、重啟與演練清理。",
+    "notEstablished": [
+      "整個 k3s/control plane、節點、儲存、Cloudflare、DNS 或 registry 從零重建／切換。",
+      "Offsite／KMS 災難復原、正式 RPO／RTO 或無資料損失承諾。",
+      "OD 全域原子 snapshot，或 OD 與 Omnigent 跨應用共同原子復原點。",
+      "任意版本/schema 升級、任意 provider/account/model 或外部 host、多 workspace、持續負載／故障驗收。"
+    ]
+  },
+  "dataRecovery": {
+    "status": "passed",
+    "omnigent": {
+      "sameSnapshotDatabaseAndArtifacts": true,
+      "rowCountsEqualToExportedSnapshot": true,
+      "conversationItems": 2385522,
+      "conversations": 2757,
+      "fileRowsVerified": 727,
+      "moduleBundlesVerified": 229,
+      "capturedArtifactFiles": 2522,
+      "capturedArtifactBytes": 501845343,
+      "artifactHashesAndPermissionsEqual": true,
+      "invalidIndexes": 0,
+      "unvalidatedConstraints": 0,
+      "relationshipOrphans": {
+        "fileSession": 0,
+        "metadataConversation": 0,
+        "metadataProject": 0
+      },
+      "sourceLockSeconds": 1.071,
+      "nativeDatabaseRestoreSeconds": 382.72,
+      "decryptRestoreAndValidationSeconds": 462.119,
+      "evidence": [
+        "coordinated-capture.json",
+        "database-restored.json",
+        "omnigent-files-restored.json"
+      ]
+    },
+    "od": {
+      "consistency": "per-file-and-per-sqlite",
+      "globallyAtomic": false,
+      "entries": 31278,
+      "regularFiles": 25977,
+      "sqliteDatabases": 39,
+      "directories": 5193,
+      "symlinks": 69,
+      "idleWalScratchCopies": 8,
+      "sqliteSidecarsNotRestoredSeparately": 62,
+      "pinnedAtomicJsonFiles": 1,
+      "paseoDirectoriesWithObservedChurn": 1,
+      "genericAppendPrefixesUsed": 0,
+      "sourcePvcReadOnly": true,
+      "sourceWorkloadRestartedForCapture": false,
+      "captureSeconds": 110.911,
+      "restoreAndEndpointRemapSeconds": 223.938,
+      "evidence": [
+        "od-capture.json",
+        "od-restored.json"
+      ]
+    },
+    "timingBoundary": "各步驟觀測值；DB 解密/還原/驗證計時包含 native restore，不相加推導整體 RTO。"
+  },
+  "originalSecrets": {
+    "credentialFilesByteExactBeforeAccountRefresh": 6,
+    "unchangedAfterInitialNativeBoot": true,
+    "mcpOwnerAndModePreserved": true,
+    "originalDatabaseRoleAndPasswordRestored": true,
+    "authenticationAfterRestart": {
+      "originalAccountPasswordLogin": true,
+      "preBackupCookieStillValid": true,
+      "wrongPasswordDenied401": true,
+      "wrongCookieSigningSecretDenied401": true,
+      "anonymousDenied401": true,
+      "originalOwnerProjectRead": true,
+      "restoredConversationRead": true,
+      "nativeUiEntryAssetsVerified": 72,
+      "postRestoreWriteRead": true,
+      "originalAccountPasswordReset": false
+    },
+    "attachmentSamplesHashAndConditional304": 3,
+    "codexFinalChat": "Uses the user-authorized updated account in the clone only; the original restored account started but hit provider quota. This does not establish chat availability for the old account.",
+    "productionCredentialsChanged": false
+  },
+  "nativeEngines": {
+    "passed": true,
+    "count": 4,
+    "allReplies": "OMNIGENT_CONNECTION_OK",
+    "allProbesStopped": true,
+    "evidence": "four-engine-native-final.json"
+  },
+  "gui": {
+    "passed": true,
+    "count": 4,
+    "cases": [
+      {
+        "engine": "pi",
+        "model": "omnigent/chatgpt/gpt-5.6-sol",
+        "outcome": "passed",
+        "freshLogin": true,
+        "nativeReady": true,
+        "freshOwnerConfirmed": true,
+        "guiCreates": 1,
+        "guiMessages": 2,
+        "exactReplyObserved": true,
+        "replyAndIdlePersistAfterReload": true,
+        "guiInterruptPersistsAfterReload": true,
+        "guiStopConfirmed": true,
+        "cleanup": "stopped-via-gui",
+        "pageErrorCount": 0,
+        "blockedRequests": 8,
+        "blockedWebSockets": 3
+      },
+      {
+        "engine": "opencode",
+        "model": "litellm/chatgpt/gpt-5.6-sol",
+        "outcome": "passed",
+        "freshLogin": true,
+        "nativeReady": true,
+        "freshOwnerConfirmed": true,
+        "guiCreates": 1,
+        "guiMessages": 2,
+        "exactReplyObserved": true,
+        "replyAndIdlePersistAfterReload": true,
+        "guiInterruptPersistsAfterReload": true,
+        "guiStopConfirmed": true,
+        "cleanup": "stopped-via-gui",
+        "pageErrorCount": 0,
+        "blockedRequests": 9,
+        "blockedWebSockets": 3
+      },
+      {
+        "engine": "codex",
+        "model": "gpt-5.6-sol",
+        "outcome": "passed",
+        "freshLogin": true,
+        "nativeReady": true,
+        "freshOwnerConfirmed": true,
+        "guiCreates": 1,
+        "guiMessages": 1,
+        "exactReplyObserved": true,
+        "replyAndIdlePersistAfterReload": true,
+        "guiStopConfirmed": true,
+        "cleanup": "stopped-via-gui",
+        "pageErrorCount": 0,
+        "blockedRequests": 9,
+        "blockedWebSockets": 2
+      },
+      {
+        "engine": "claude",
+        "model": "haiku",
+        "outcome": "passed",
+        "freshLogin": true,
+        "nativeReady": true,
+        "freshOwnerConfirmed": true,
+        "guiCreates": 1,
+        "guiMessages": 1,
+        "exactReplyObserved": true,
+        "replyAndIdlePersistAfterReload": true,
+        "guiStopConfirmed": true,
+        "cleanup": "stopped-via-gui",
+        "pageErrorCount": 0,
+        "blockedRequests": 7,
+        "blockedWebSockets": 2
+      }
+    ],
+    "aggregation": "Independent accepted per-engine attempts across three runs. Earlier whole-run failures remain failures and are retained privately.",
+    "freshBrowserProfilesRemoved": true,
+    "harOrStorageStateRetained": false,
+    "guard": "Two exact loopback origins and owned session writes only. 33 HTTP and 10 WebSocket attempts were blocked; ancillary features behind those attempts are not claimed tested.",
+    "harnessFindings": "A 64 MiB shared-memory limit crashed renderers; private mode-0700 temporary profiles resolved this. A synchronous Python driver then spun; async Node replaced it. Dead port-forwards were recreated. Native keyboard activation avoided a workspace-menu pointer timeout.",
+    "evidence": "clone-gui-chat-final.json"
+  },
+  "nativeReconcile": {
+    "passed": true,
+    "nativeHelmReapplied": true,
+    "allPodUidsUnchanged": true,
+    "allContainerRestartCountsUnchanged": true,
+    "allContainersReady": true,
+    "allFourPvcUidsUnchanged": true,
+    "productionUnchanged": true
+  },
+  "restart": {
+    "passed": true,
+    "controllersRecreated": 4,
+    "allContainersReady": true,
+    "sameFourPvcIdentities": true,
+    "databaseTableCountsUnchanged": {
+      "conversations": 2779,
+      "conversation_items": 2385584,
+      "files": 727,
+      "agents": 229,
+      "projects": 20
+    },
+    "pluginConnectionAndFourVerificationReceiptsPersisted": true,
+    "fourStaticProviderCredentialsUnchanged": true,
+    "codexMayRefreshCredentialsNatively": true,
+    "freshBrowserPluginReadyAndHostConnected": true,
+    "freshBrowserOriginalPasswordLogin": true,
+    "evidence": [
+      "native-restart.json",
+      "original-auth-after-restart.json",
+      "gui-after-restart.json"
+    ]
+  },
+  "console": {
+    "passedAfterRestart": true,
+    "passedChecks": 25,
+    "nativeIframeWebSocketAndHarmlessCommand": true,
+    "browserDomPatchOrDirectTtydFallback": false,
+    "cloneChartFixApplied": true,
+    "sourceChartVersion": "0.5.8",
+    "patch": "console-terminal-base-path.patch",
+    "patchAppliesToCapturedChart": true,
+    "productionPatchApplied": false,
+    "evidence": [
+      "console verification results.json",
+      "console-public-patch-check.json"
+    ]
+  },
+  "network": {
+    "passedAfterRestart": true,
+    "connectionChecks": 11,
+    "productionConnectionsDenied": 9,
+    "authorizedCloneAndLiteLlmConnectionsAllowed": 2,
+    "dedicatedRestoredLiteLlmKeyAuthenticated": true,
+    "modelCatalogHttpStatus": 200,
+    "newProviderKeysCreated": false
+  },
+  "cleanup": {
+    "passed": true,
+    "namespaceRemoved": true,
+    "fourFreshPersistentVolumesRemoved": true,
+    "fourOwnedLonghornBackendVolumesRemoved": true,
+    "ownedLonghornEnginesReplicasAndVolumeAttachmentsRemoved": true,
+    "physicalMediaErasureClaimed": false,
+    "temporaryLiteLlmIngressRemoved": true,
+    "originalLiteLlmPoliciesUnchanged": true,
+    "sourcePodUidsImagesReadinessRestartsUnchanged": true,
+    "portForwardersStopped": 1,
+    "cloneSecretsHelpersControllersRemoved": true,
+    "encryptedBackupsPreserved": true,
+    "privateKeyPreservedSeparately": true
+  },
+  "backup": {
+    "encryptedArtifacts": 4,
+    "hashesAndSizesVerified": true,
+    "archiveMode": "0600",
+    "keyFileMode": "0600",
+    "separateKeyDirectoryMode": "0700",
+    "ciphertextArtifacts": [
+      {
+        "role": "coordinated-artifacts",
+        "ciphertextBytes": 413977689,
+        "ciphertextSha256": "271f001df146bacf2b37432e87c639db1071dbed02d0ccc0de9951b1daf8e4e4",
+        "evidence": "coordinated-capture.json",
+        "sourceField": "events[capture-complete].encryptedReceipt"
+      },
+      {
+        "role": "postgresql-database",
+        "ciphertextBytes": 2623975060,
+        "ciphertextSha256": "0bc6d6b1085bb0be4e168d9d29eb356c454575005bf0358a2acf3fc61d71f47a",
+        "evidence": "coordinated-capture.json",
+        "sourceField": "databaseTransfer.envelope"
+      },
+      {
+        "role": "od-volumes",
+        "ciphertextBytes": 2914160239,
+        "ciphertextSha256": "4188d0c17737e2c9bb5a0683027f246a9b61f170836cc5a73336d2274629dd53",
+        "evidence": "od-capture.json",
+        "sourceField": "capture"
+      },
+      {
+        "role": "application-configuration",
+        "ciphertextBytes": 2191610,
+        "ciphertextSha256": "661faaab21ac89f7c595bd0560f1e63bea5c1aa3441c621c07e7ef6ec84a42ed",
+        "evidence": "configuration-capture.json",
+        "sourceField": "envelope"
+      }
+    ],
+    "encryptedBackupsAndSeparateKeyPreserved": true,
+    "offsiteOrKmsRecoveryTested": false,
+    "securePhysicalErasureClaimed": false
+  },
+  "publicTools": {
+    "readme": "sealed/README.md",
+    "cryptoTestsPassed": 58,
+    "odVolumeTestsPassed": 73,
+    "totalTestsPassed": 131,
+    "scope": "Generic authenticated-envelope and guarded OD-volume utilities, not a one-click Kubernetes or PostgreSQL recovery installer."
+  },
+  "release": {
+    "version": "0.1.6",
+    "prerelease": true,
+    "binaryAssetsChanged": false,
+    "assetCount": 7
+  },
+  "evidenceIndex": [
+    "coordinated-capture.json",
+    "database-restored.json",
+    "omnigent-files-restored.json",
+    "od-capture.json",
+    "od-restored.json",
+    "original-auth-restored.json",
+    "credentials-after-native-boot.json",
+    "four-engine-native-final.json",
+    "clone-gui-chat-final.json",
+    "native-reconcile-idempotent.json",
+    "native-restart.json",
+    "original-auth-after-restart.json",
+    "gui-after-restart.json",
+    "od-network-and-litellm.json",
+    "final-backup-integrity.json",
+    "cleanup.json",
+    "console verification results.json",
+    "console-public-patch-check.json",
+    "failed-gui-owned-cleanup.json",
+    "failed-gui-profile-cleanup.json"
+  ],
+  "publicationBoundary": "Only aggregate evidence and ciphertext hashes are public. No archives, private keys, plaintext configuration, cookies, usernames, email addresses, host IDs, namespace IDs, session IDs, credential fingerprints or private screenshots are published."
+}

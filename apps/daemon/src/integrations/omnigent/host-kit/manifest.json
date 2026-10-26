@@ -1,0 +1,8 @@
+{
+  "source": "woow-paas-charts/shared/omnigent-host",
+  "revision": "33d476ad16a2bd5bc892aaf53cd1a29f978f4951",
+  "files": {
+    "supervisor.sh": "88e3718688edc48cee39d4c323520eb5c0165e6796e683fee3e267676015870c",
+    "og_helper.py": "e8364f8cae8047b10a0715d48a9af36d2b5b028bea68796f5e050513b6300e4b"
+  }
+}

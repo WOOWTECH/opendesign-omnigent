@@ -6,6 +6,8 @@
 // every apply/use catalogue (composer @-search, home gallery, rails).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { InstalledPluginRecordSchema } from '@open-design/contracts';
 
@@ -75,7 +77,13 @@ const BUNDLED_PLUGIN = record({ id: 'bundled-suite', sourceKind: 'bundled', titl
 // od.launch on a non-bundled plugin is ignored: it stays an ordinary plugin.
 const USER_WITH_LAUNCH = record({ id: 'user-launch', sourceKind: 'user', title: 'User launch', launch: '/x/' });
 
-const PLUGINS = [PASEO, MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI];
+const omnigentManifest = JSON.parse(readFileSync(resolve(__dirname, '../../../../plugins/_official/woow/woow-omnigent/open-design.json'), 'utf8'));
+const OMNIGENT = InstalledPluginRecordSchema.parse({
+  ...record({ id: omnigentManifest.name, sourceKind: 'bundled', title: omnigentManifest.title }),
+  manifest: omnigentManifest,
+});
+const LAUNCHERS = [CLI, MCP, OMNIGENT, PASEO];
+const PLUGINS = [MCP, USER_PLUGIN, BUNDLED_PLUGIN, CLI, OMNIGENT, PASEO];
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -89,9 +97,8 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/plugins');
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === `/api/plugins/${CLI.id}`) return jsonResponse(CLI);
-    if (url === `/api/plugins/${MCP.id}`) return jsonResponse(MCP);
-    if (url === `/api/plugins/${PASEO.id}`) return jsonResponse(PASEO);
+    const plugin = LAUNCHERS.find(({ id }) => url === `/api/plugins/${id}`);
+    if (plugin) return jsonResponse(plugin);
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: PLUGINS });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [] });
     if (url === '/api/skills') return jsonResponse({ skills: [] });
@@ -113,7 +120,7 @@ async function renderInstalledTab(locale: Locale = 'en', onUsePlugin = vi.fn()) 
   );
   fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
   await waitFor(() => {
-    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(4);
+    expect(utils.container.querySelectorAll('.plugin-marketplace__item').length).toBe(5);
   });
   return utils;
 }
@@ -131,9 +138,10 @@ describe('built-in launcher plugins on the Plugins page', () => {
       </I18nProvider>,
     );
     await waitFor(() => {
-      expect(cardIds(container).slice(0, 3)).toEqual([
+      expect(cardIds(container).slice(0, 4)).toEqual([
         'plugins-card-woow-cli-terminal',
         'plugins-card-woow-mcp-server',
+        'plugins-card-woow-omnigent',
         'plugins-card-woow-paseo',
       ]);
     });
@@ -142,11 +150,12 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(screen.getByTestId('plugins-tab-installed').textContent).toContain('已安裝');
   });
 
-  it('pins all launchers above personal plugins, leaving other bundled plugins out', async () => {
+  it('pins the launchers above personal plugins, leaving other bundled plugins out', async () => {
     const { container } = await renderInstalledTab();
     expect(cardIds(container)).toEqual([
       'plugins-card-woow-cli-terminal',
       'plugins-card-woow-mcp-server',
+      'plugins-card-woow-omnigent',
       'plugins-card-woow-paseo',
       'plugins-card-my-plugin',
     ]);
@@ -157,7 +166,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
   it('opens the launch path in a new tab through a plain anchor and offers no uninstall', async () => {
     const onUsePlugin = vi.fn();
     await renderInstalledTab('en', onUsePlugin);
-    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-paseo', '/paseo/setup/']]) {
+    for (const [id, href] of [['woow-mcp-server', '/mcp-admin/'], ['woow-cli-terminal', '/console/'], ['woow-omnigent', '/settings/omnigent'], ['woow-paseo', '/paseo/setup/']]) {
       const open = screen.getByTestId(`plugins-card-open-${id}`);
       expect(open.tagName).toBe('A');
       expect(open.classList.contains('plugin-launcher-action')).toBe(true);
@@ -201,7 +210,7 @@ describe('built-in launcher plugins on the Plugins page', () => {
     expect(screen.getByTestId('plugins-card-open-woow-paseo').textContent).toBe('開啟');
   });
 
-  it.each([CLI, MCP, PASEO])('gives $id an Open detail link instead of Use', async (plugin) => {
+  it.each(LAUNCHERS)('gives $id details an Open link instead of Use', async (plugin) => {
     render(
       <I18nProvider initial="zh-TW">
         <PluginDetailView pluginId={plugin.id} />
@@ -224,6 +233,7 @@ describe('launchers stay out of apply/use catalogues', () => {
   it('drops bundled launchers from the visible catalogue the composer and home read', async () => {
     expect(isVisiblePlugin(MCP)).toBe(false);
     expect(isVisiblePlugin(CLI)).toBe(false);
+    expect(isVisiblePlugin(OMNIGENT)).toBe(false);
     expect(isVisiblePlugin(PASEO)).toBe(false);
     expect(isVisiblePlugin(BUNDLED_PLUGIN)).toBe(true);
     expect(isVisiblePlugin(USER_WITH_LAUNCH)).toBe(true);
