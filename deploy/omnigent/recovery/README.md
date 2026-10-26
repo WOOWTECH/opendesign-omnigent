@@ -113,3 +113,9 @@ the actual data volume. A synthetic PostgreSQL restore does not establish an RPO
 or RTO for the production database, nor does a UI rollback establish support for
 downgrading database schemas. Full commercial acceptance remains gated on those
 operational checks and supported version combinations.
+
+## Production-source follow-up
+
+See the [2026-10-26 follow-up](acceptance-followup-20261026.md) for four-engine GUI,
+full source typecheck and actual production-backup restore results. It supplements
+the synthetic drill above and preserves explicit remaining recovery gates.

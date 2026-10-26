@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-26",
+  "scope": "Production GUI, source typecheck and isolated native production-backup restoration",
+  "fullCommercialAcceptance": false,
+  "testedRuntimeSourceRevision": "4c92e25efe5735ee41bf52bbac8399b31d01d9b3",
+  "typecheckedSourceRevision": "218ec61bb9240defb062f3b87663845db788c89a",
+  "gui": {
+    "entry": "OD Plugins -> Omnigent settings -> Open Omnigent -> fresh web login -> native host/workspace/engine/model picker -> owned chat",
+    "pluginVersion": "0.1.6",
+    "daemonVersion": "0.24.1",
+    "passed": true,
+    "ownedSessions": 4,
+    "messagesSubmitted": 6,
+    "allOwnedRunnersStopped": true,
+    "engines": {
+      "claude": {
+        "engineVersion": "2.1.296",
+        "modelSelected": "haiku",
+        "reportedModel": "claude-haiku-5-5",
+        "exactReplyResult": "passed",
+        "replyReload": "passed",
+        "interrupt": "not_tested",
+        "interruptReload": "not_tested",
+        "interruptSeconds": null,
+        "receiptSha256": "1f3a29ce2efb872dc622dbb3db0491551ba7d58882dc2f62d5a86fa72fc0b50d",
+        "runnerSourceSha256": "d3197a087107310648d36b5eb88f0868375bc67d764c2463d4fd3d8be3b2ce28"
+      },
+      "codex": {
+        "engineVersion": "0.162.1",
+        "modelSelected": "gpt-5.6-sol",
+        "reportedModel": "gpt-5.6-sol",
+        "exactReplyResult": "passed",
+        "replyReload": "passed",
+        "interrupt": "not_tested",
+        "interruptReload": "not_tested",
+        "interruptSeconds": null,
+        "receiptSha256": "cd3b0ebf77734c6852d7be9e70e7edcc45905e5d0ee112965b907f42e78b8182",
+        "runnerSourceSha256": "2fe090a04b9decc1face54218beb5013c17e73ef7481d35bc72de72709d2eeb0"
+      },
+      "pi": {
+        "engineVersion": "1.1.0",
+        "modelSelected": "omnigent/toypark1234/gpt-5.6-sol",
+        "reportedModel": "omnigent/toypark1234/gpt-5.6-sol",
+        "exactReplyResult": "passed",
+        "replyReload": "passed",
+        "interrupt": "passed",
+        "interruptReload": "passed",
+        "interruptSeconds": 4.249,
+        "receiptSha256": "b5abc0f5eb841ab901bb6a092d451254067b2706c959ccd4ad5bbed861a0e8af",
+        "runnerSourceSha256": "5e8bff9581defd0600d023ad04ba28cacc82974bf8d7064cdd3f90ff8db8671d"
+      },
+      "opencode": {
+        "engineVersion": "1.18.33",
+        "modelSelected": "litellm/toypark1234/gpt-5.6-sol",
+        "reportedModel": null,
+        "exactReplyResult": "passed",
+        "replyReload": "passed",
+        "interrupt": "passed",
+        "interruptReload": "passed",
+        "interruptSeconds": 3.347,
+        "receiptSha256": "666b27199797b079e930d8d43cf683b041be20c8dfad201e4c54e5e93e45f81d",
+        "runnerSourceSha256": "d3197a087107310648d36b5eb88f0868375bc67d764c2463d4fd3d8be3b2ce28"
+      }
+    },
+    "verificationReceiptSha256": "3af3a4a7d11ed8b88c0e7954ef890c3be1542981bcdd783c1a44497f4812d359",
+    "summarySha256": "262424c01f012c567d9bf11dc82b1a33b9465d378b68e74718332c85edd01831"
+  },
+  "typecheck": {
+    "passed": true,
+    "completedWorkspaceCount": 27,
+    "rootScriptsPassed": true,
+    "guardPassed": true,
+    "versions": {
+      "node": "24.21.0",
+      "pnpm": "10.33.2"
+    },
+    "frozenLockfile": true,
+    "trackedSourceChanges": false,
+    "packageAndLockfilesUnchanged": true,
+    "receiptSha256": "a8a1c3214b768751b8d713fba71aba70ec863aa5a8c18f9e3fd64277dfa92ecb",
+    "logSha256": "533dfa1b8945a998b6c7cbaccff7e41605acbde70feb835fc949d3a0fa7b2d01"
+  },
+  "productionBackupRestore": {
+    "passed": true,
+    "nativeApiPassed": true,
+    "referenceCompletenessPassed": true,
+    "backupTimeUtc": "2026-10-25T19:30:00Z",
+    "backupBytes": 2585934201,
+    "backupSha256": "617d76c660b978104bd0d4b1f61b6bd276af9fe8ef2f5009d5dfe23fc1dcd215",
+    "assetsCaptureTimeUtc": "2026-10-26T04:49:35Z",
+    "assetsFiles": 2514,
+    "assetsBytes": 501474656,
+    "assetsArchiveSha256": "1588205a8d4c7fa3fd5de021280264fb3cd6700f44e4b7cbcf38848287992c8a",
+    "postgresImage": "postgres@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97",
+    "serverBaseImage": "jcr-prod.woowtech.io/woow-paas-docker-local/omnigent-server-kubernetes@sha256:31c83f122e2a2c0854997235ea5163596598933bc4faa4c12f619b3d9407cd4b",
+    "postgresVersion": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "isolatedDatabaseRestoreSeconds": 305.65,
+    "measurementIsProductionRto": false,
+    "coordinatedDbPvcSnapshot": false,
+    "databaseAndAttachments": {
+      "passed": true,
+      "transferIntegrityPassed": true,
+      "sourceReferenceCompletenessPassed": true,
+      "rowCountsBeforeCloneChanges": {
+        "account_tokens": 5,
+        "agents": 228,
+        "alembic_version": 1,
+        "comments": 0,
+        "connections": 0,
+        "conversation_items": 2364624,
+        "conversation_labels": 31735,
+        "conversations": 2673,
+        "device_grants": 50,
+        "files": 724,
+        "hosts": 18,
+        "omnigent_conversation_metadata": 2673,
+        "policies": 8,
+        "preferences": 0,
+        "projects": 19,
+        "scheduled_task_runs": 9,
+        "scheduled_tasks": 3,
+        "session_permissions": 1165,
+        "user_daily_cost": 94,
+        "users": 6
+      },
+      "extensions": [
+        [
+          "pg_trgm",
+          "1.6"
+        ],
+        [
+          "plpgsql",
+          "1.0"
+        ]
+      ],
+      "tableOwners": [
+        "omnigent"
+      ],
+      "schemaVersion": "mm1a2b3c4d5e",
+      "invalidIndexes": 0,
+      "unvalidatedConstraints": 0,
+      "fileRows": 724,
+      "filesMatched": 724,
+      "missingFileReferences": 0,
+      "fileSizeMismatches": 0,
+      "bundleRows": 228,
+      "bundlesVerified": 228,
+      "missingBundles": 0,
+      "relationshipOrphans": {
+        "fileSessionOrphans": 0,
+        "metadataConversationOrphans": 0,
+        "metadataProjectOrphans": 0
+      },
+      "clonedSchedulesPaused": 3,
+      "newIsolatedAdminCreated": true,
+      "cloneOwnerPasswordChangedForReadTest": true,
+      "productionAuthEnvironmentCopied": false,
+      "conversationsWithoutOmnigentMetadata": 0,
+      "conversationsWithoutMetadataInterpretation": "Counted separately: generic conversation storage can contain non-session records; not assumed corrupt."
+    },
+    "nativeApi": {
+      "passed": true,
+      "health": true,
+      "isolatedNativeLogin": true,
+      "uiEntryAssetsVerified": 72,
+      "crossOwnerProjectDenied": true,
+      "conversationRestoredNativeRead": true,
+      "nativeAttachmentDownloads": [
+        {
+          "passed": true,
+          "bytes": 36613,
+          "conditional304": true
+        },
+        {
+          "passed": true,
+          "bytes": 636782,
+          "conditional304": true
+        },
+        {
+          "passed": true,
+          "bytes": 636796,
+          "conditional304": true
+        }
+      ],
+      "postRestoreWriteRead": true,
+      "projectRestoredOwnerRead": true
+    },
+    "network": "Database network none; server shares only its isolated loopback namespace; no published ports",
+    "schedulesPausedInClone": true,
+    "existingProductionCookiePreserved": false,
+    "runtimeAuthEnvironmentCopied": false,
+    "newCloneOnlyCredentials": true,
+    "cleanupComplete": true,
+    "executedSourceHashes": {
+      "prepare_clone.py": "8d132363f3b579aee36cfbb5ebd1c5c329df156786e4c5ddc21a5e9e0f2a5f2e",
+      "start_clone.py": "e491434ba3589341334dc9fd66f2d911f57aaefed4cd0b12ff5533e3d05c1807",
+      "probe_clone.py": "cac162ae91b36b2ca45dd1c667af6059d8246db73a4b84deb7ba38ce2f74e7fd",
+      "extract_assets.py": "50c76baf19a5d996b21f1f0e70b57ed33fbc8481c2673ddd6e3c79c50a344452",
+      "orchestration.py": "b2024509be8ff2afde0d7b6e680ab17bdd6b4913a6932a344fb83f5c5457bbc1",
+      "routes_events.py": "de49aa937354f5aae799a5783af00ad6cee2f99c0f6094c7646ee298f4dcc27f",
+      "Dockerfile": "d9361460e4ef14cff348fb4c17f4c26246ad23ce4bec8113d5183b31cd41ae74"
+    },
+    "privateReceiptSha256": "1d171f1245be3f1008b59031d0efc8afd49ae3f3938e08d7bdc3e0947bfd6038"
+  },
+  "productionReadOnlyVerification": {
+    "odHelmRevision": 40,
+    "odChartVersion": "0.5.8",
+    "odValuesAndWorkloadEqualRevision38": true,
+    "odSdkManifestsPassed": true,
+    "odRestartCounts": {
+      "authproxy": 0,
+      "mcp": 0,
+      "open-design": 0
+    },
+    "serverHelmRevision": 6,
+    "serverPlatformHelmRuntimeUiAgree": true,
+    "serverBackendOverlaysUnchanged": true,
+    "serverRestartCounts": {
+      "server": 0
+    },
+    "odReceiptSha256": "9183a0aa871208fe0b440a54210a85f809547be4adb848894e47a63a0a8f9ebf",
+    "serverReceiptSha256": "3348e41caa43232618ef19f67a477155aa5a29b656fa66ac4ef8cb4ced9879f1",
+    "independentPostRestoreCheck": {
+      "od": {
+        "uidUnchanged": true,
+        "allContainersReady": true,
+        "restartCounts": {
+          "authproxy": 0,
+          "mcp": 0,
+          "open-design": 0
+        }
+      },
+      "server": {
+        "uidUnchanged": true,
+        "allContainersReady": true,
+        "restartCounts": {
+          "server": 0
+        }
+      },
+      "postgres": {
+        "uidUnchanged": true,
+        "allContainersReady": true,
+        "restartCounts": {
+          "postgres": 0
+        }
+      }
+    },
+    "independentCleanupResourceCounts": {
+      "containers": 0,
+      "volumes": 0,
+      "images": 0
+    },
+    "postRestoreCheckedAt": "2026-10-26T05:37:03Z",
+    "postRestoreReceiptSha256": "2040e3a471fd6d662a4428cea8fc6983303f932c530a7e587acfad1bf794f0a4"
+  },
+  "remainingGates": [
+    "A coordinated recoverable DB/artifact snapshot with stated RPO; this native backup predates captured assets.",
+    "Protected runtime secret recovery and existing-cookie continuity; the isolated drill deliberately used fresh credentials.",
+    "Infrastructure/controller reconstruction, native browser GUI after clone rebuild, external host reconnection and provider calls after recovery.",
+    "Arbitrary core/schema upgrades, multi-workspace authorization and sustained load/fault testing.",
+    "Claude/Codex interrupt behavior was not tested in this GUI round."
+  ]
+}
