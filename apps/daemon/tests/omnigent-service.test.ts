@@ -198,7 +198,34 @@ process.stdin.on('end', () => {
     await f.service.action({ action: 'disconnect' }); await f.service.waitForIdle();
     expect(await f.service.status()).toMatchObject({ phase: 'error', operation: { phase: 'error' }, issue: { code: 'HOST_OWNERSHIP_UNVERIFIED' } });
   });
-  it('disconnect drains a real owned host and retains its config identity for reconnection', async () => {
+  it.each(['SERVER_UNREACHABLE', 'NEEDS_LOGIN', 'HOST_DISCONNECT_TIMEOUT'])('stops the host after failed disconnect and preserves %s', async code => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    const original = f.adapter.getMockImplementation()!;
+    f.adapter.mockImplementation(async input => {
+      if (input.action === 'disconnect') return { ok: false, error: { code } };
+      if (input.action === 'shutdown') f.host.connected = false;
+      return original(input);
+    });
+    await f.service.action({ action: 'disconnect' }); await f.service.waitForIdle();
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['disconnect', 'shutdown']);
+    expect(await f.service.status()).toMatchObject({ loginConfirmed: false, host: { connected: false }, operation: { phase: 'error', issue: { code } }, issue: { code } });
+  });
+  it('leaves interrupted disconnect cleanup to the existing daemon shutdown', async () => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    const original = f.adapter.getMockImplementation()!;
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    f.adapter.mockImplementation(async input => {
+      if (input.action === 'disconnect') { await pending; return { ok: false, error: { code: 'SERVER_UNREACHABLE' } }; }
+      return original(input);
+    });
+    await f.service.action({ action: 'disconnect' });
+    await vi.waitFor(() => expect(f.adapter).toHaveBeenCalledWith(expect.objectContaining({ action: 'disconnect' })));
+    await f.service.shutdown(); finish(); await f.service.waitForIdle();
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['disconnect', 'shutdown']);
+    expect((await f.service.status()).issue?.code).toBe('OPERATION_INTERRUPTED');
+  });
+  it.each([false, true])('disconnect drains a real owned host and retains identity (remote failure: %s)', async remoteFailure => {
     const f = await fixture('bundled'); await f.setup();
     const state = path.join(f.dir, 'integrations/omnigent');
     const home = path.join(state, 'host'); await mkdir(home);
@@ -225,6 +252,9 @@ process.stdin.on('end', () => {
     process.stdout.write(require('node:child_process').execFileSync('python3', [${JSON.stringify(adapter)}], { input: raw, encoding: 'utf8' }));
   } else {
     // Remote offline confirmation is isolated from this process lifecycle test.
+    if (input.action === 'disconnect' && ${remoteFailure}) {
+      process.stdout.write(JSON.stringify({ok:false,error:{code:'SERVER_UNREACHABLE'}})); return;
+    }
     if (input.action === 'disconnect') fs.unlinkSync(path.join(input.dataDir,'auth_tokens.json'));
     process.stdout.write(JSON.stringify({ok:true,data:{host:{id:'this-host',connected:false},engines:{}}}));
   }
@@ -235,10 +265,12 @@ process.stdin.on('end', () => {
     try {
       await once(host.stdout, 'data');
       await service.action({ action: 'disconnect' }); await service.waitForIdle();
-      expect(await service.status()).toMatchObject({ phase: 'needs-login', host: { id: 'this-host', connected: false } });
+      expect(await service.status()).toMatchObject({ phase: remoteFailure ? 'error' : 'needs-login', host: { id: 'this-host', connected: false },
+        ...(remoteFailure ? { issue: { code: 'SERVER_UNREACHABLE' } } : {}) });
       expect(await readFile(stopped, 'utf8')).toBe('TERM');
       expect(await exited).toEqual([0, null]);
-      await expect(readFile(tokens)).rejects.toMatchObject({ code: 'ENOENT' });
+      if (remoteFailure) expect(await readFile(tokens, 'utf8')).toBe('synthetic-token');
+      else await expect(readFile(tokens)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(await readFile(path.join(home, 'config.yaml'), 'utf8')).toBe(config);
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill('SIGKILL');

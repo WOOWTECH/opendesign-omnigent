@@ -370,12 +370,13 @@ export class OmnigentIntegrationService {
     if (input.action === 'disconnect') {
       const response = await operationCall('disconnect');
       await assertCurrent();
-      if (!response.ok) throw new OmnigentServiceError(text(response.error?.code) ?? 'ADAPTER_FAILED');
-      // The remote disconnect has completed; no adapter invocation is still
-      // active here. Drain our host without waiting on this active operation.
+      // The remote attempt has settled. Drain our host even if it failed,
+      // without waiting on this active operation.
       await this.stopHost();
       await assertCurrent();
-      this.state.phase = 'needs-login'; this.local = { ...this.local, host: { connected: false } };
+      this.local = { ...this.local, host: { connected: false } };
+      if (!response.ok) throw new OmnigentServiceError(text(response.error?.code) ?? 'ADAPTER_FAILED');
+      this.state.phase = 'needs-login';
     } else {
       if (input.action === 'update' && !this.state.loginConfirmed) {
         this.state.phase = 'needs-login';

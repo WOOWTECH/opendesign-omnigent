@@ -512,6 +512,16 @@ class BoundaryTests(unittest.TestCase):
         kill.assert_not_called()
         self.assertEqual([False], self.auth.refresh)
 
+    def test_disconnect_never_starts_an_absent_manager(self):
+        instance = self.make(allowManagedHost=True)
+        instance.local_host = lambda: {**HOST, "managerRunning": False}
+        with patch.object(instance, "ensure_host") as ensure_host, patch.object(adapter.subprocess, "Popen") as popen:
+            result = instance.disconnect()
+        ensure_host.assert_not_called()
+        popen.assert_not_called()
+        self.assertFalse(result["host"]["connected"])
+        self.assertEqual([SERVER], self.auth.cleared)
+
     def test_disconnect_rejects_wrong_server_before_clearing(self):
         self.assert_code("HOST_SERVER_MISMATCH", self.make(server="https://other.example").disconnect)
         self.assertEqual([], self.auth.cleared)

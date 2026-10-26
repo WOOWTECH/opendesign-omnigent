@@ -812,7 +812,6 @@ class Adapter:
         active = self.config().get("server")
         if active and normalize_server(active) != server:
             raise AdapterError("host_server_mismatch", "取消連結的 server 必須是本機目前設定的 server。")
-        self.ensure_host(server)
         host = self.local_host()
         if not host["id"]:
             raise AdapterError("missing_host_id", "目前沒有可取消連結的本機 host ID。")
