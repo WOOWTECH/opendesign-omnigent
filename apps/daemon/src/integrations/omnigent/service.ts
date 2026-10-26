@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { InstalledPluginRecord, OmnigentActionRequest, OmnigentIntegrationStatus, OmnigentIssue, OmnigentOnboarding, OmnigentOperation, OmnigentReceipt, OmnigentEngine } from '@open-design/contracts';
 import { ensureOmnigentDependencies } from './dependencies.js';
+import { restoreOmnigentPrivacy } from './permissions.js';
 
 export const OMNIGENT_PLUGIN_ID = 'woow-omnigent';
 const ENGINE_IDS = ['claude', 'codex', 'pi', 'opencode'] as const;
@@ -116,6 +117,7 @@ export class OmnigentIntegrationService {
     if (this.initialization) return this.initialization;
     this.initialization = (async () => {
       try {
+        await restoreOmnigentPrivacy(this.stateDir);
         const raw = JSON.parse(await readFile(this.file, 'utf8')) as State;
         if (raw.schema !== 1 || typeof raw.enabled !== 'boolean' || typeof raw.loginConfirmed !== 'boolean') throw new Error();
         this.state = { ...empty(), ...raw };
