@@ -9710,9 +9710,6 @@ export async function startServer({
     getPlugin: (scope) => getOmnigentPlugin(omnigentOnboarding.context(scope)),
     createOnboarding: omnigentOnboarding.create,
   });
-  void omnigentService.resumeLocalHost().catch(() => {
-    console.warn('[omnigent] Automatic connection restore failed; open Omnigent settings to retry.');
-  });
   registerOmnigentRoutes(app, {
     service: omnigentService,
     origin: { resolvedPortRef },
@@ -18079,7 +18076,7 @@ export async function startServer({
   //   - `apps/daemon/sidecar/server.ts`     → expects `{ url, server }`
   //   - `apps/daemon/tests/version-route.test.ts` → expects `{ url, server }`
   return await new Promise((resolve, reject) => {
-    let daemonShutdownStarted = false;
+    let daemonShutdownWork: Promise<void> | undefined;
     const clearTerminalTelemetryFallbackTimers = () => {
       for (const timer of terminalTelemetryFallbackTimers) clearTimeout(timer);
       terminalTelemetryFallbackTimers.clear();
@@ -18116,23 +18113,33 @@ export async function startServer({
       collabPublishWatcher.dispose();
       collabCloud?.dispose();
     };
-    const shutdownDaemonRuns = async () => {
-      if (daemonShutdownStarted) return;
-      daemonShutdownStarted = true;
+    const shutdownDaemonRuns = (): Promise<void> => {
+      if (daemonShutdownWork) return daemonShutdownWork;
       daemonShuttingDown = true;
-      amrTerminalReportDelivery.stop();
-      clearTerminalTelemetryFallbackTimers();
-      const shutdownGraceMs = resolveChatRunShutdownGraceMs();
-      await design.runs.shutdownActive({ graceMs: shutdownGraceMs });
-      // Cleanup runs independently of user terminal classification. Give
-      // confirmed closed writers at most three additional seconds at shutdown.
-      const cleanupDrain = await codexThreadCleanupOwner.drain(shutdownGraceMs);
-      if (cleanupDrain.pending > 0) {
-        console.warn('[codex] closed-thread cleanup shutdown deadline reached', cleanupDrain);
-      }
-      await terminalService.shutdownActive();
-      await browserSessionService.shutdownActive();
-      await design.analytics.shutdown();
+      // Seal host startup immediately; drain it in parallel with native runs.
+      const omnigentShutdown = omnigentService.shutdown().catch(() => {
+        console.warn('[omnigent] Owned host shutdown could not be confirmed.');
+      });
+      daemonShutdownWork = (async () => {
+        try {
+          amrTerminalReportDelivery.stop();
+          clearTerminalTelemetryFallbackTimers();
+          const shutdownGraceMs = resolveChatRunShutdownGraceMs();
+          await design.runs.shutdownActive({ graceMs: shutdownGraceMs });
+          // Cleanup runs independently of user terminal classification. Give
+          // confirmed closed writers at most three additional seconds at shutdown.
+          const cleanupDrain = await codexThreadCleanupOwner.drain(shutdownGraceMs);
+          if (cleanupDrain.pending > 0) {
+            console.warn('[codex] closed-thread cleanup shutdown deadline reached', cleanupDrain);
+          }
+          await terminalService.shutdownActive();
+          await browserSessionService.shutdownActive();
+          await design.analytics.shutdown();
+        } finally {
+          await omnigentShutdown;
+        }
+      })();
+      return daemonShutdownWork;
     };
     let server;
     try {
@@ -18200,6 +18207,9 @@ export async function startServer({
           console.log(`[od] daemon listening on ${url}`);
         }
         daemonUrl = url;
+        void omnigentService.resumeLocalHost().catch(() => {
+          console.warn('[omnigent] Automatic connection restore failed; open Omnigent settings to retry.');
+        });
         resolve(returnServer ? {
           url,
           server,

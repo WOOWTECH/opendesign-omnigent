@@ -29,6 +29,9 @@ export interface OmnigentServiceOptions {
   prepareDependencies?: (update: boolean) => Promise<void>;
 }
 const MESSAGES: Record<string, string> = {
+  SERVICE_SHUTTING_DOWN: 'The daemon is shutting down. Retry after it restarts.',
+  HOST_SHUTDOWN_TIMEOUT: 'The owned Omnigent host did not stop within its shutdown budget.',
+  HOST_OWNERSHIP_UNVERIFIED: 'The local host process ownership could not be verified.',
   OPERATION_BUSY: 'Another Omnigent operation is running. Please wait.',
   PLUGIN_NOT_INSTALLED: 'Install the Omnigent plugin first.',
   PLUGIN_DISABLED: 'Enable the Omnigent plugin before connecting or verifying.',
@@ -84,6 +87,11 @@ export class OmnigentIntegrationService {
   private initialization: Promise<void> | undefined;
   private active: Promise<void> | undefined;
   private mutationBusy = false;
+  private closing = false;
+  private shutdownWork: Promise<void> | undefined;
+  private hostStopWork: Promise<void> | undefined;
+  private hostStopping = false;
+  private processStops = new Set<() => Promise<void>>();
   private activeAbort: AbortController | undefined;
   private local: Record<string, unknown> = {};
   private statusCheck: Promise<void> | undefined;
@@ -128,7 +136,9 @@ export class OmnigentIntegrationService {
    * a persisted scope string alone cannot recreate that authority at startup.
    */
   async resumeLocalHost(): Promise<void> {
+    if (this.closing) return;
     await this.load();
+    if (this.closing) return;
     if (!this.state.enabled || !this.state.loginConfirmed
       || this.state.installationScope !== 'local' || this.state.approvalScope !== 'local') return;
     // Reconcile the actual installation before allowing the adapter to resume.
@@ -169,6 +179,7 @@ export class OmnigentIntegrationService {
   }
   private async call(action: string, additional: AdapterInput = {}): Promise<AdapterResult> {
     try {
+      if ((this.closing || this.hostStopping) && action !== 'shutdown') throw new OmnigentServiceError('SERVICE_SHUTTING_DOWN');
       return await this.adapter({ action, stateDir: this.stateDir,
         configHome: this.env.OMNIGENT_CONFIG_HOME,
         dataDir: this.env.OMNIGENT_DATA_DIR,
@@ -217,7 +228,8 @@ export class OmnigentIntegrationService {
       ...(this.state.issue ? { issue: { ...this.state.issue } } : {}) };
   }
   async status(scope = 'local', fresh = false): Promise<OmnigentIntegrationStatus> {
-    const plugin = await this.reconcile(scope);
+    const plugin = this.closing ? await this.options.getPlugin(scope) : await this.reconcile(scope);
+    if (this.closing) return this.publicStatus(plugin, scope);
     if (this.state.installationScope && this.state.installationScope !== scope) return this.publicStatus(plugin, scope);
     if (plugin && this.state.enabled && !this.active && (fresh || !this.lastCheck || Date.now() - this.lastCheck > 10_000)) {
       this.statusCheck ??= (async () => {
@@ -245,7 +257,9 @@ export class OmnigentIntegrationService {
     finally { this.onboardingWork.delete(scope); }
   }
   async action(input: OmnigentActionRequest, scope = 'local'): Promise<OmnigentIntegrationStatus> {
+    this.assertOpen();
     const plugin = await this.reconcile(scope);
+    this.assertOpen();
     if (!plugin) throw new OmnigentServiceError('PLUGIN_NOT_INSTALLED');
     if (this.active || this.mutationBusy) throw new OmnigentServiceError('OPERATION_BUSY');
     this.mutationBusy = true;
@@ -263,6 +277,7 @@ export class OmnigentIntegrationService {
     finally { this.mutationBusy = false; }
   }
   private async actionReserved(input: OmnigentActionRequest, scope: string, plugin: PluginIdentity): Promise<OmnigentIntegrationStatus> {
+    this.assertOpen();
     if (input.action === 'enable') {
       if (!this.state.enabled) { this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'needs-login'; }
       this.state.enabled = true; delete this.state.issue; await this.onboarding(scope); await this.save();
@@ -270,6 +285,9 @@ export class OmnigentIntegrationService {
     }
     if (input.action === 'disable') {
       this.state.enabled = false; this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'disabled'; delete this.state.issue; await this.save();
+      // Disabling also withdraws the remote host, without logging out.
+      await this.stopHost();
+      this.local = { ...this.local, host: { ...object(this.local.host), connected: false } };
       return this.publicStatus(plugin, scope);
     }
     if (!this.state.enabled) throw new OmnigentServiceError('PLUGIN_DISABLED');
@@ -292,18 +310,22 @@ export class OmnigentIntegrationService {
     this.state.phase = input.action === 'verify' ? 'verifying' : input.action === 'disconnect' ? 'disconnecting' : input.action === 'update' ? 'checking' : 'connecting';
     delete this.state.issue;
     await this.save();
+    this.assertOpen();
     this.activeAbort = new AbortController();
     const generation = this.state.installedGeneration;
     const operationId = this.state.operation.id;
     const assertCurrent = async () => {
+      this.assertOpen();
       const plugin = await this.options.getPlugin(scope);
+      this.assertOpen();
       if (!plugin || plugin.installedAt !== generation || this.state.installedGeneration !== generation || this.state.operation?.id !== operationId || this.activeAbort?.signal.aborted) {
         this.activeAbort?.abort();
         throw new OmnigentServiceError('OPERATION_SUPERSEDED');
       }
     };
     const pending = this.perform(input, assertCurrent).catch(async error => {
-      const code = error instanceof OmnigentServiceError ? error.code : 'ADAPTER_FAILED';
+      // Shutdown preserves confirmed approval and identity; it is not logout.
+      const code = this.closing ? 'OPERATION_INTERRUPTED' : error instanceof OmnigentServiceError ? error.code : 'ADAPTER_FAILED';
       if (code === 'OPERATION_SUPERSEDED') { this.state.loginConfirmed = false; this.state.verification = {}; this.state.phase = 'needs-login'; }
       this.state.issue = issue(code); this.state.phase = ['NEEDS_LOGIN', 'FRESH_LOGIN_REQUIRED'].includes(code) ? 'needs-login' : 'error';
       if (this.state.operation) this.state.operation = { ...this.state.operation, phase: 'error', finishedAt: new Date().toISOString(), issue: issue(code) };
@@ -324,7 +346,9 @@ export class OmnigentIntegrationService {
       if (this.options.prepareDependencies) await this.options.prepareDependencies(input.action === 'update');
       else if (!this.options.adapter) {
         try {
-          const ready = await ensureOmnigentDependencies({ stateDir: this.stateDir, env: this.env, update: input.action === 'update' });
+          const ready = await ensureOmnigentDependencies({ stateDir: this.stateDir, env: this.env, update: input.action === 'update',
+            run: (command, args, options) => this.runProcess(command, args, options.env, options.timeoutMs, options.cwd),
+          });
           Object.assign(this.env, ready.env, { OD_OMNIGENT_PYTHON: ready.python });
         } catch { throw new OmnigentServiceError('DEPENDENCIES_MISSING'); }
       }
@@ -406,28 +430,104 @@ export class OmnigentIntegrationService {
     delete this.state.issue; await this.save();
   }
   async waitForIdle(): Promise<void> { await this.active; }
-  private async executeAdapter(input: AdapterInput): Promise<AdapterResult> {
-    if (this.activeAbort?.signal.aborted) return { ok: false, error: { code: 'OPERATION_SUPERSEDED' } };
-    const python = omnigentPython(this.stateDir, this.env);
-    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'adapter.py');
+  private assertOpen(): void {
+    if (this.closing || this.hostStopping) throw new OmnigentServiceError('SERVICE_SHUTTING_DOWN');
+  }
+  /** Drain child invocations before stopping the private host. No credential changes.
+   * Normal path <=26s; hard deadline 32s. External launcher budget: >=35s.
+   */
+  shutdown(): Promise<void> {
+    if (this.shutdownWork) return this.shutdownWork;
+    this.closing = true;
+    this.activeAbort?.abort();
+    this.shutdownWork = this.stopHost();
+    return this.shutdownWork;
+  }
+  private stopHost(): Promise<void> {
+    if (this.hostStopWork) return this.hostStopWork;
+    this.hostStopping = true;
+    let deadline: NodeJS.Timeout | undefined;
+    const work = (async () => {
+      // All invocations using this SDK runner must finish before cleanup can
+      // enumerate hosts. Dependency preparation may settle later, but call()
+      // and assertCurrent() prevent its result from starting another adapter.
+      await Promise.all([...this.processStops].map(stop => stop()));
+      const result = await this.call('shutdown');
+      if (!result.ok) throw new OmnigentServiceError(text(result.error?.code) ?? 'HOST_SHUTDOWN_TIMEOUT');
+      await this.writeChain;
+    })();
+    this.hostStopWork = Promise.race([work, new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => reject(new OmnigentServiceError('HOST_SHUTDOWN_TIMEOUT')), 32_000);
+    })]).then(() => {
+      this.hostStopping = false; this.hostStopWork = undefined;
+    }).finally(() => { if (deadline) clearTimeout(deadline); });
+    // Failure leaves startup sealed; never race an unconfirmed stop with setup.
+    return this.hostStopWork;
+  }
+  private runProcess(command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number,
+    cwd?: string, input?: AdapterInput): Promise<{ code: number | null; stdout: string; error?: string }> {
+    const shutdown = input?.action === 'shutdown';
+    if ((!shutdown && (this.closing || this.hostStopping)) || (!shutdown && this.activeAbort?.signal.aborted)) {
+      return Promise.resolve({ code: null, stdout: '' });
+    }
     return new Promise(resolve => {
-      const child = spawn(python, [script], { env: this.env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(command, args, { env, ...(cwd ? { cwd } : {}), stdio: ['pipe', 'pipe', 'pipe'] });
       let output = ''; let finished = false; let termination: NodeJS.Timeout | undefined;
-      const finish = (result: AdapterResult) => { if (finished) return; finished = true; clearTimeout(timer); if (termination) clearTimeout(termination); resolve(result); };
-      const timer = setTimeout(() => { child.kill('SIGTERM'); termination = setTimeout(() => child.kill('SIGKILL'), 25_000); }, input.action === 'verify' ? 180_000 : 120_000);
-      const signal = this.activeAbort?.signal;
-      const abort = () => { child.kill('SIGTERM'); termination ??= setTimeout(() => child.kill('SIGKILL'), 25_000); };
+      let failure: string | undefined;
+      let reapDeadline: NodeJS.Timeout | undefined;
+      let closed!: () => void;
+      const stopped = new Promise<void>(done => { closed = done; });
+      const stop = (graceMs: number) => {
+        if (finished) return stopped;
+        clearTimeout(timer);
+        failure = 'ADAPTER_TIMEOUT';
+        child.kill('SIGTERM');
+        if (termination) clearTimeout(termination);
+        termination = setTimeout(() => {
+          child.kill('SIGKILL');
+          // Bound waiting on inherited pipes or a kernel-delayed reap. A failed
+          // invocation never counts as a confirmed host shutdown.
+          reapDeadline = setTimeout(() => {
+            child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy(); finish(null);
+          }, 1_000);
+        }, graceMs);
+        return stopped;
+      };
+      const stopForShutdown = () => stop(5_000);
+      this.processStops.add(stopForShutdown);
+      const signal = shutdown ? undefined : this.activeAbort?.signal;
+      const abort = () => { void stop(this.closing ? 5_000 : input ? 25_000 : 2_000); };
+      const timer = setTimeout(() => { void stop(shutdown || !input ? 2_000 : 25_000); }, timeoutMs);
+      const finish = (code: number | null) => {
+        if (finished) return;
+        finished = true; clearTimeout(timer); if (termination) clearTimeout(termination);
+        if (reapDeadline) clearTimeout(reapDeadline);
+        signal?.removeEventListener('abort', abort);
+        this.processStops.delete(stopForShutdown); closed(); resolve({ code, stdout: output, ...(failure ? { error: failure } : {}) });
+      };
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
       child.stdout.on('data', chunk => { if (output.length + chunk.length > 1024 * 1024) child.kill('SIGKILL'); else output += String(chunk); });
       child.stderr.resume(); child.stdin.on('error', () => {});
-      child.on('error', () => finish({ ok: false, error: { code: 'DEPENDENCIES_MISSING' } }));
-      child.on('close', code => {
-        signal?.removeEventListener('abort', abort);
-        if (code !== 0) return finish({ ok: false, error: { code: termination ? 'ADAPTER_TIMEOUT' : 'ADAPTER_FAILED' } });
-        try { finish(JSON.parse(output) as AdapterResult); } catch { finish({ ok: false, error: { code: 'ADAPTER_FAILED' } }); }
+      child.on('error', () => { failure = 'DEPENDENCIES_MISSING'; finish(null); });
+      child.on('exit', code => {
+        if (!shutdown && (this.closing || this.hostStopping)) {
+          // A cancelled helper may have inherited pipe writers. They cannot
+          // keep the daemon waiting after the direct invocation has exited.
+          child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy(); finish(code);
+        }
       });
-      child.stdin.end(JSON.stringify(input));
+      child.on('close', finish);
+      child.stdin.end(input ? JSON.stringify(input) : undefined);
     });
+  }
+  private async executeAdapter(input: AdapterInput): Promise<AdapterResult> {
+    const python = omnigentPython(this.stateDir, this.env);
+    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'adapter.py');
+    const result = await this.runProcess(python, [script], this.env,
+      input.action === 'shutdown' ? 23_000 : input.action === 'verify' ? 180_000 : 120_000, undefined, input);
+    if (result.code !== 0) return { ok: false, error: { code: result.error ?? 'ADAPTER_FAILED' } };
+    try { return JSON.parse(result.stdout) as AdapterResult; }
+    catch { return { ok: false, error: { code: 'ADAPTER_FAILED' } }; }
   }
 }

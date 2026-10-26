@@ -18,6 +18,8 @@ import math
 import os
 from pathlib import Path
 import re
+import secrets
+import select
 import signal
 import shutil
 import socket
@@ -44,6 +46,7 @@ SAFE_ERROR_CODES = frozenset({
     "INVALID_ENGINE", "ENGINE_NOT_INSTALLED", "HOST_OFFLINE", "MISSING_AGENT", "ENGINE_NOT_READY",
     "MODELS_UNAVAILABLE", "INVALID_MODEL", "VERIFY_TIMEOUT", "INVALID_SESSION_RESPONSE",
     "INVALID_REQUEST", "INVALID_ACTION", "BUSY", "STDIN_REQUIRED", "REQUEST_TOO_LARGE",
+    "HOST_OWNERSHIP_UNVERIFIED", "HOST_SHUTDOWN_TIMEOUT",
     "OPERATION_TIMEOUT", "OPERATION_CANCELLED", "INVALID_JSON", "MISSING_DEPENDENCY", "INTERNAL_ERROR",
 })
 
@@ -595,7 +598,127 @@ class Adapter:
                 finally:
                     temporary.unlink(missing_ok=True)
 
+    @contextlib.contextmanager
+    def host_lifecycle(self):
+        self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        descriptor = os.open(self.state_dir / "host-lifecycle.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def host_owner(self, *, create=False) -> str | None:
+        """Private process capability, independent of login and host identity."""
+        path = self.state_dir / "host-owner.json"
+        if not path.exists() and not create:
+            return None
+        if not path.exists():
+            with path.open("x", encoding="utf-8") as handle:
+                os.chmod(path, 0o600)
+                json.dump({"schema": 1, "id": secrets.token_hex(32)}, handle)
+        record = read_json(path)
+        owner = record.get("id")
+        if path.is_symlink() or path.stat().st_uid != os.getuid() or record.get("schema") != 1 or not isinstance(owner, str) or not re.fullmatch(r"[a-f0-9]{64}", owner):
+            raise AdapterError("host_ownership_unverified", "無法驗證此原生 host 的程序所有權。")
+        return owner
+
+    def owned_processes(self, owner: str):
+        """Pin each matching process before inspecting it again; never signal a raw PID.
+
+        Both capability and private home are inherited by the supervisor and its
+        host/session tree. Status-file PIDs, argv substrings and process groups
+        alone are deliberately not termination authority.
+        """
+        expected = {b"OD_OMNIGENT_HOST_OWNER": owner.encode(),
+                    b"OD_OMNIGENT_HOST_HOME": os.fsencode(self.config_home.resolve())}
+        processes = []
+        try:
+            for directory in Path("/proc").iterdir():
+                if not directory.name.isdigit() or int(directory.name) in (os.getpid(), os.getppid()):
+                    continue
+                descriptor = None
+                try:
+                    def matches():
+                        if directory.stat().st_uid != os.getuid():
+                            return False
+                        env = dict(row.split(b"=", 1) for row in (directory / "environ").read_bytes().split(b"\0") if b"=" in row)
+                        return all(env.get(key) == value for key, value in expected.items())
+                    if not matches():
+                        continue
+                    descriptor = os.pidfd_open(int(directory.name))
+                    if select.select([descriptor], [], [], 0)[0] or not matches():
+                        continue
+                    argv = (directory / "cmdline").read_bytes().split(b"\0")
+                    supervisor = os.fsencode(Path(__file__).resolve().parent / "host-kit" / "supervisor.sh") in argv
+                    identity = (directory.name, (directory / "stat").read_text().rsplit(")", 1)[1].split()[19])
+                    processes.append((descriptor, supervisor, identity))
+                    descriptor = None
+                except (FileNotFoundError, ProcessLookupError, PermissionError):
+                    continue
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
+            return processes
+        except BaseException:
+            for descriptor, _, _ in processes:
+                os.close(descriptor)
+            raise
+
+    @staticmethod
+    def signal_owned(processes, signum, signaled, *, supervisors_only=False):
+        for descriptor, supervisor, identity in processes:
+            if (identity, signum) in signaled:
+                continue
+            if supervisors_only and not supervisor:
+                continue
+            try:
+                signal.pidfd_send_signal(descriptor, signum)
+                signaled.add((identity, signum))
+            except ProcessLookupError:
+                pass
+
+    def shutdown(self) -> dict:
+        # No server access, login refresh, logout, config rewrite or engine install.
+        if not self.state_dir.exists():
+            return {"stopped": True, "forced": False}
+        with self.host_lifecycle():
+            owner = self.host_owner()
+            if owner is None:
+                if self.local_host()["managerRunning"]:
+                    raise AdapterError("host_ownership_unverified", "既有 supervisor 尚無原生程序所有權紀錄。")
+                return {"stopped": True, "forced": False}
+            if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+                raise AdapterError("host_ownership_unverified", "此系統不支援安全的程序停止。")
+            grace = self.request.get("shutdownGraceSeconds", 18.0)
+            if isinstance(grace, bool) or not isinstance(grace, (float, int)) or not math.isfinite(grace):
+                raise AdapterError("invalid_timeout", "停止等待時間格式不正確。")
+            deadline = self.clock() + max(0.1, min(grace, 18.0))
+            forced = False
+            signaled = set()
+            while True:
+                processes = self.owned_processes(owner)
+                if not processes:
+                    return {"stopped": True, "forced": forced}
+                try:
+                    if self.clock() >= deadline:
+                        forced = True
+                        self.signal_owned(processes, signal.SIGKILL, signaled)
+                    else:
+                        # Let the unchanged kit run its 15-second graceful stop.
+                        # If it has already exited, also drain orphaned sessions.
+                        self.signal_owned(processes, signal.SIGTERM, signaled,
+                                          supervisors_only=any(supervisor for _, supervisor, _ in processes))
+                finally:
+                    for descriptor, _, _ in processes:
+                        os.close(descriptor)
+                if self.clock() >= deadline + 2:
+                    raise AdapterError("host_shutdown_timeout", "原生 host 未能在期限內停止。")
+                self.sleep(0.1)
+
     def ensure_host(self, server: str) -> str:
+        with self.host_lifecycle():
+            return self.start_host(server)
+
+    def start_host(self, server: str) -> str:
         if self.local_host()["managerRunning"]:
             return "kit"
         if self.request.get("allowManagedHost") is True:
@@ -611,8 +734,12 @@ class Adapter:
                         "OG_STATE_DIR": str(self.data_dir / "omnigent-host"),
                         "OG_HOST_ENABLED": "1", "OG_HOST_NAME": "OpenDesign · " + socket.gethostname(),
                         "OG_WORKSPACE": str(self.workspace), "OG_IDLE_SECONDS": "2",
-                        "OG_UNSET_ENV": ",".join(filter(None, [env.get("OG_UNSET_ENV", ""), "OD_API_TOKEN"])),
-                        "OG_PASSTHROUGH": "OD_DAEMON_URL,NODE_PATH,NODE_OPTIONS,LITELLM_BASE_URL"})
+                        "OG_STOP_GRACE_SECONDS": "15",
+                        "OD_OMNIGENT_HOST_OWNER": self.host_owner(create=True),
+                        "OD_OMNIGENT_HOST_HOME": str(self.config_home.resolve()),
+                        "OG_UNSET_ENV": ",".join(key for key in (env.get("OG_UNSET_ENV", "") + ",OD_API_TOKEN").split(",")
+                                                 if key and key not in ("OD_OMNIGENT_HOST_OWNER", "OD_OMNIGENT_HOST_HOME")),
+                        "OG_PASSTHROUGH": "OD_DAEMON_URL,NODE_PATH,NODE_OPTIONS,LITELLM_BASE_URL,OD_OMNIGENT_HOST_OWNER,OD_OMNIGENT_HOST_HOME"})
             # The native kit takes an exclusive volume lock before starting a host.
             # No account information is passed in argv, environment additions, or logs.
             subprocess.Popen(["/bin/sh", str(kit / "supervisor.sh")], env=env,
@@ -915,12 +1042,15 @@ def dispatch(request: dict, **dependencies) -> dict:
     if not isinstance(request, dict):
         raise AdapterError("invalid_request", "請提供 JSON object。")
     action = request.get("action")
-    if action not in ("status", "inventory", "catalog", "login", "connect", "verify", "disconnect"):
+    if action not in ("status", "inventory", "catalog", "login", "connect", "verify", "disconnect", "shutdown"):
         raise AdapterError("invalid_action", "不支援此 Omnigent 操作。")
     original_environment = {key: os.environ.get(key) for key in ("OMNIGENT_CONFIG_HOME", "OMNIGENT_DATA_DIR")}
     plugin = None
     try:
         plugin = Adapter(dict(request), **dependencies)
+        if action == "shutdown":
+            with bounded_call(23):
+                return plugin.shutdown()
         if action == "inventory":
             with bounded_call(30):
                 return {"engines": plugin.engine_inventory()}

@@ -23,6 +23,144 @@ async function fixture(sourceKind?: InstalledPluginRecord['sourceKind']) {
   return { dir, service, options, engines, host, adapter, onboarding, setup, setPlugin: (value: typeof plugin) => { plugin = value; } };
 }
 describe('Omnigent native service', () => {
+  it('shuts down once without revoking approved login, then resumes on the next daemon', async () => {
+    const f = await fixture('bundled'); await f.setup();
+    const file = path.join(f.dir, 'integrations/omnigent/state.json');
+    const before = await readFile(file, 'utf8');
+    f.adapter.mockClear();
+    await Promise.all([f.service.shutdown(), f.service.shutdown()]);
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['shutdown']);
+    expect(await readFile(file, 'utf8')).toBe(before);
+    await expect(f.service.action({ action: 'repair' })).rejects.toMatchObject({ code: 'SERVICE_SHUTTING_DOWN' });
+    await f.service.status('local', true);
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['shutdown']);
+    f.adapter.mockClear();
+    await new OmnigentIntegrationService(f.options).resumeLocalHost();
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+  });
+  it('prevents a pending setup dependency result from starting a host after shutdown', async () => {
+    const f = await fixture('bundled');
+    let finish!: () => void;
+    const dependencies = new Promise<void>(resolve => { finish = resolve; });
+    const prepareDependencies = vi.fn(() => dependencies);
+    const service = new OmnigentIntegrationService({ ...f.options, prepareDependencies });
+    await service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' });
+    await vi.waitFor(() => expect(prepareDependencies).toHaveBeenCalled());
+    await service.shutdown();
+    finish(); await service.waitForIdle();
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['shutdown']);
+  });
+  it('disable stops the private host without logout and still requires fresh GUI login after enable', async () => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    await f.service.action({ action: 'disable' });
+    expect(f.adapter.mock.calls.map(([input]) => input.action)).toEqual(['shutdown']);
+    expect((await f.service.status()).host.connected).toBe(false);
+    f.adapter.mockClear();
+    await f.service.action({ action: 'enable' });
+    await expect(f.service.action({ action: 'repair' })).rejects.toMatchObject({ code: 'FRESH_LOGIN_REQUIRED' });
+    expect(f.adapter.mock.calls.every(([input]) => input.allowManagedHost !== true)).toBe(true);
+  });
+  it('waits for a real cancelled adapter to exit before host cleanup, preventing late setup spawn', async () => {
+    const f = await fixture('bundled');
+    const python = path.join(f.dir, 'adapter-lifecycle');
+    const ready = path.join(f.dir, 'connect-ready');
+    const events = path.join(f.dir, 'events');
+    await writeFile(python, `#!${process.execPath}
+const fs = require('node:fs');
+let raw = '';
+process.stdin.on('data', chunk => { raw += chunk; });
+process.stdin.on('end', () => {
+  const input = JSON.parse(raw);
+  if (input.action === 'connect') {
+    const late = setTimeout(() => fs.appendFileSync(${JSON.stringify(events)}, 'LATE-HOST\\n'), 800);
+    process.on('SIGTERM', () => {
+      clearTimeout(late);
+      setTimeout(() => { fs.appendFileSync(${JSON.stringify(events)}, 'adapter-exit\\n'); process.exit(0); }, 100);
+    });
+    fs.writeFileSync(${JSON.stringify(ready)}, 'ready');
+  } else {
+    fs.appendFileSync(${JSON.stringify(events)}, input.action + '\\n');
+    process.stdout.write(JSON.stringify({ ok: true, data: { stopped: true } }));
+  }
+});
+`, { mode: 0o700 });
+    const service = new OmnigentIntegrationService({ dataDir: f.dir, getPlugin: f.options.getPlugin,
+      createOnboarding: f.onboarding, prepareDependencies: async () => {},
+      env: { HOME: f.dir, OD_OMNIGENT_PYTHON: python } });
+    await service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' });
+    await vi.waitFor(async () => expect(await readFile(ready, 'utf8')).toBe('ready'));
+    await service.shutdown(); await service.waitForIdle();
+    expect(await readFile(events, 'utf8')).toBe('adapter-exit\nshutdown\n');
+  });
+  it('fails closed within 32 seconds when host shutdown cannot be confirmed', async () => {
+    const f = await fixture('bundled'); await f.setup();
+    f.adapter.mockImplementation(async () => new Promise(() => {}));
+    vi.useFakeTimers();
+    try {
+      const stopping = f.service.shutdown();
+      const assertion = expect(stopping).rejects.toMatchObject({ code: 'HOST_SHUTDOWN_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(32_000); await assertion;
+      await expect(f.service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' }))
+        .rejects.toMatchObject({ code: 'SERVICE_SHUTTING_DOWN' });
+    } finally { vi.useRealTimers(); }
+  });
+  it('forces a real adapter ignoring TERM to exit within the five-second cancellation budget', async () => {
+    const f = await fixture('bundled');
+    const python = path.join(f.dir, 'adapter-ignore-term');
+    const ready = path.join(f.dir, 'ready');
+    const cleaned = path.join(f.dir, 'cleaned');
+    await writeFile(python, `#!${process.execPath}
+const fs = require('node:fs'); let raw = '';
+process.stdin.on('data', chunk => raw += chunk);
+process.stdin.on('end', () => {
+  const input = JSON.parse(raw);
+  if (input.action === 'connect') {
+    process.on('SIGTERM', () => {});
+    fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+    setInterval(() => {}, 1000);
+  } else {
+    const pid = Number(fs.readFileSync(${JSON.stringify(ready)}, 'utf8'));
+    try { process.kill(pid, 0); throw new Error('adapter still running'); }
+    catch (error) { if (error.code !== 'ESRCH') throw error; }
+    fs.writeFileSync(${JSON.stringify(cleaned)}, 'stopped');
+    process.stdout.write(JSON.stringify({ ok: true, data: { stopped: true } }));
+  }
+});
+`, { mode: 0o700 });
+    const service = new OmnigentIntegrationService({ dataDir: f.dir, getPlugin: f.options.getPlugin,
+      createOnboarding: f.onboarding, prepareDependencies: async () => {},
+      env: { HOME: f.dir, OD_OMNIGENT_PYTHON: python } });
+    await service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' });
+    await vi.waitFor(async () => expect(await readFile(ready, 'utf8')).toMatch(/^\d+$/));
+    const started = Date.now();
+    await service.shutdown(); await service.waitForIdle();
+    expect(Date.now() - started).toBeLessThan(7_000);
+    expect(await readFile(cleaned, 'utf8')).toBe('stopped');
+  });
+  it('keeps confirmed approval when shutdown interrupts a repair', async () => {
+    const f = await fixture('bundled'); await f.setup(); f.adapter.mockClear();
+    let finish!: () => void;
+    const dependencies = new Promise<void>(resolve => { finish = resolve; });
+    const prepareDependencies = vi.fn(() => dependencies);
+    const service = new OmnigentIntegrationService({ ...f.options, prepareDependencies });
+    await service.action({ action: 'repair' });
+    await vi.waitFor(() => expect(prepareDependencies).toHaveBeenCalled());
+    await service.shutdown(); finish(); await service.waitForIdle();
+    const state = JSON.parse(await readFile(path.join(f.dir, 'integrations/omnigent/state.json'), 'utf8'));
+    expect(state).toMatchObject({ enabled: true, loginConfirmed: true, approvalScope: 'local', installationScope: 'local' });
+    f.adapter.mockClear();
+    await new OmnigentIntegrationService(f.options).resumeLocalHost();
+    expect(f.adapter.mock.calls[0]?.[0]).toMatchObject({ action: 'catalog', allowManagedHost: true });
+  });
+  it('preserves the missing SDK diagnostic when the managed runner cannot spawn', async () => {
+    const f = await fixture('bundled');
+    const service = new OmnigentIntegrationService({ dataDir: f.dir, getPlugin: f.options.getPlugin,
+      createOnboarding: f.onboarding, prepareDependencies: async () => {},
+      env: { HOME: f.dir, OD_OMNIGENT_PYTHON: path.join(f.dir, 'missing-python') } });
+    await service.action({ action: 'setup', server: 'https://omni.example', username: 'u', password: 'p' });
+    await service.waitForIdle();
+    expect((await service.status()).issue?.code).toBe('DEPENDENCIES_MISSING');
+  });
   it('rediscovers the private SDK after a daemon restart without reinstalling it', () => {
     const state = '/fixture/integrations/omnigent';
     const managed = path.join(state, 'deps/uv/tools/omnigent/bin/python');

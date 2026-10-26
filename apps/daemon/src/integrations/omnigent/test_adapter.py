@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch, Mock
@@ -762,6 +763,108 @@ class HttpBoundaryTests(unittest.TestCase):
             self.assertEqual("INTERNAL_ERROR", response["error"]["code"])
             self.assertNotIn("EXTRA_SECRET", output.getvalue())
             self.assertNotIn("FAKE_PASSWORD", output.getvalue())
+
+
+class ManagedShutdownTests(unittest.TestCase):
+    """Real Linux processes; no SDK, network, credentials or live hosts."""
+    def test_real_vendor_supervisor_gracefully_stops_host_without_touching_credentials(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root); home = state / 'host'; home.mkdir()
+            owner = 'b' * 64
+            (state / 'host-owner.json').write_text(json.dumps({'schema': 1, 'id': owner}))
+            config = home / 'config.yaml'; config.write_text('host: {host_id: retained-id}\n')
+            tokens = home / 'auth_tokens.json'; tokens.write_text('synthetic-login')
+            helper = state / 'helper.py'
+            helper.write_text("import sys\nif sys.argv[1] == 'state': print('reason=me-200\\nserver=https://fixture.invalid\\naccount=fixture')\n")
+            descendant = state / 'session.py'
+            descendant.write_text("import os,pathlib,signal,sys,time\nroot=pathlib.Path(os.environ['HOME'])\nsignal.signal(signal.SIGTERM, lambda *args: (root.joinpath('session-stopped').write_text('TERM'), sys.exit(0)))\nroot.joinpath('session-ready').write_text(str(os.getpid()))\ntime.sleep(60)\n")
+            host = state / 'omnigent'
+            host.write_text(f"#!{sys.executable}\n" + "import os,pathlib,signal,subprocess,sys,time\nroot=pathlib.Path(os.environ['HOME'])\nsubprocess.Popen([sys.executable,str(root.parent / 'session.py')],start_new_session=True)\nsignal.signal(signal.SIGTERM, lambda *args: (root.joinpath('host-stopped').write_text('TERM'), sys.exit(0)))\nroot.joinpath('host-ready').write_text(str(os.getpid()))\nprint('Connected as fixture',flush=True)\ntime.sleep(60)\n")
+            host.chmod(0o700)
+            env = {**os.environ, 'HOME': str(home), 'OG_BIN': str(host), 'OG_PYTHON': sys.executable,
+                   'OG_HELPER': str(helper), 'OG_CONFIG_HOME': str(home), 'OG_DATA_DIR': str(home),
+                   'OMNIGENT_CONFIG_HOME': str(home), 'OMNIGENT_DATA_DIR': str(home),
+                   'OG_STATE_DIR': str(home / 'omnigent-host'), 'OG_TMUX_MIN': '',
+                   'OG_HOST_ENABLED': '1', 'OG_STOP_GRACE_SECONDS': '15', 'OG_OOM_SCORE_ADJ': '',
+                   'OG_MEM_GUARD_PERCENT': '0', 'OD_OMNIGENT_HOST_OWNER': owner,
+                   'OD_OMNIGENT_HOST_HOME': str(home)}
+            supervisor = subprocess.Popen(['/bin/sh', str(ROOT / 'host-kit/supervisor.sh')], env=env,
+                                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            request = dict(action='shutdown', stateDir=str(state), configHome=str(home), dataDir=str(home))
+            try:
+                until = time.monotonic() + 5
+                while not (home / 'session-ready').exists() and time.monotonic() < until:
+                    self.assertIsNone(supervisor.poll()); time.sleep(0.02)
+                self.assertTrue((home / 'session-ready').exists())
+                result = adapter.dispatch(request)
+                self.assertEqual(result, {'stopped': True, 'forced': False})
+                self.assertEqual(supervisor.wait(timeout=3), 0)
+                self.assertEqual((home / 'host-stopped').read_text(), 'TERM')
+                self.assertEqual((home / 'session-stopped').read_text(), 'TERM')
+                self.assertEqual(json.loads((home / 'omnigent-host/status.json').read_text())['state'], 'stopped')
+                self.assertEqual(config.read_text(), 'host: {host_id: retained-id}\n')
+                self.assertEqual(tokens.read_text(), 'synthetic-login')
+            finally:
+                a = adapter.Adapter(request)
+                processes = a.owned_processes(owner)
+                a.signal_owned(processes, signal.SIGKILL, set())
+                for descriptor, _, _ in processes: os.close(descriptor)
+                supervisor.wait(timeout=3)
+
+    def test_shutdown_escalates_for_owned_process_ignoring_term_and_rejects_wrong_capability(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root); home = state / 'host'; home.mkdir()
+            owner = 'c' * 64
+            (state / 'host-owner.json').write_text(json.dumps({'schema': 1, 'id': owner}))
+            script = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('ready',flush=True); time.sleep(60)"
+            env = {**os.environ, 'OD_OMNIGENT_HOST_OWNER': owner, 'OD_OMNIGENT_HOST_HOME': str(home)}
+            owned = subprocess.Popen([sys.executable, '-c', script], env=env, stdout=subprocess.PIPE, text=True, start_new_session=True)
+            foreign = subprocess.Popen([sys.executable, '-c', script], env={**env, 'OD_OMNIGENT_HOST_OWNER': 'd' * 64}, stdout=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                self.assertEqual(owned.stdout.readline().strip(), 'ready')
+                self.assertEqual(foreign.stdout.readline().strip(), 'ready')
+                started = time.monotonic()
+                result = adapter.dispatch(dict(action='shutdown', stateDir=str(state), configHome=str(home), dataDir=str(home), shutdownGraceSeconds=0.2))
+                self.assertEqual(result, {'stopped': True, 'forced': True})
+                self.assertLess(time.monotonic() - started, 3)
+                self.assertEqual(owned.wait(timeout=3), -signal.SIGKILL)
+                self.assertIsNone(foreign.poll())
+            finally:
+                for process in (owned, foreign):
+                    if process.poll() is None: process.kill()
+                    process.wait(timeout=3); process.stdout.close()
+
+    def test_shutdown_stops_only_owned_processes_and_keeps_login_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root)
+            home = state / 'host'; home.mkdir()
+            owner = 'a' * 64
+            (state / 'host-owner.json').write_text(json.dumps({'schema': 1, 'id': owner}))
+            config = home / 'config.yaml'; config.write_text('host: {host_id: retained-id}\n')
+            tokens = home / 'auth_tokens.json'; tokens.write_text('synthetic-login-must-remain')
+            stopped = state / 'stopped'
+            script = "import pathlib,signal,sys,time; signal.signal(signal.SIGTERM, lambda *args: (pathlib.Path(sys.argv[1]).write_text('TERM'), sys.exit(0))); print('ready',flush=True); time.sleep(60)"
+            env = {**os.environ, 'OD_OMNIGENT_HOST_OWNER': owner, 'OD_OMNIGENT_HOST_HOME': str(home)}
+            owned = subprocess.Popen([sys.executable, '-c', script, str(stopped)], env=env, start_new_session=True, stdout=subprocess.PIPE, text=True)
+            foreign = subprocess.Popen([sys.executable, '-c', script, str(state / 'foreign-stopped')], env={**env, 'OD_OMNIGENT_HOST_HOME': str(state / 'other-host')}, start_new_session=True, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(owned.stdout.readline().strip(), 'ready')
+                self.assertEqual(foreign.stdout.readline().strip(), 'ready')
+                # A forged status PID must not authorize terminating another scope.
+                kit_state = home / 'omnigent-host'; kit_state.mkdir()
+                (kit_state / 'status.json').write_text(json.dumps({'supervisor_pid': foreign.pid}))
+                result = adapter.dispatch(dict(action='shutdown', stateDir=str(state), configHome=str(home), dataDir=str(home)))
+                self.assertTrue(result['stopped'])
+                self.assertEqual(owned.wait(timeout=3), 0)
+                self.assertEqual(stopped.read_text(), 'TERM')
+                self.assertIsNone(foreign.poll())
+                self.assertEqual(config.read_text(), 'host: {host_id: retained-id}\n')
+                self.assertEqual(tokens.read_text(), 'synthetic-login-must-remain')
+                self.assertTrue(adapter.dispatch(dict(action='shutdown', stateDir=str(state), configHome=str(home), dataDir=str(home)))['stopped'])
+            finally:
+                for process in (owned, foreign):
+                    if process.poll() is None: process.kill()
+                    process.wait(timeout=3); process.stdout.close()
 
 
 if __name__ == "__main__":
