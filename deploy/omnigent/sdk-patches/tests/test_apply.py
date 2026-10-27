@@ -58,9 +58,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual((self.package / relative).read_bytes(), original)
         self.assertEqual(list(self.package.rglob('.sdk-patch-*')), [])
 
-    def test_four_patches_four_quota_hunks_and_idempotent_reuse(self):
+    def test_five_patches_four_quota_hunks_and_idempotent_reuse(self):
         quota = self.assets / 'opencode-quota-error.patch'
-        self.assertEqual(len(self.manifest['patches']), 4)
+        self.assertEqual(len(self.manifest['patches']), 5)
         self.assertEqual(sum(line.startswith(b'@@ ') for line in quota.read_bytes().splitlines()), 4)
         self.apply()
         for relative, result in self.results.items():
@@ -175,10 +175,10 @@ class InstallerTests(unittest.TestCase):
                     self.assert_originals()
 
     def test_symlink_file_and_parent_are_rejected(self):
-        target = self.package / 'harnesses/opencode_native/forwarder.py'
+        target = self.package / 'harnesses/pi_native/credentials.py'
         external = self.root / 'outside'
         external.mkdir()
-        outside = external / 'forwarder.py'
+        outside = external / 'credentials.py'
         outside.write_bytes(target.read_bytes())
         target.unlink()
         target.symlink_to(outside)
@@ -187,7 +187,7 @@ class InstallerTests(unittest.TestCase):
         target.parent.rmdir()
         target.parent.symlink_to(external)
         with self.assertRaisesRegex(ValueError, 'INVALID_TARGET'): self.apply()
-        self.assertEqual(outside.read_bytes(), self.originals['harnesses/opencode_native/forwarder.py'])
+        self.assertEqual(outside.read_bytes(), self.originals['harnesses/pi_native/credentials.py'])
         self.assertEqual((self.package / 'host/connect.py').read_bytes(), self.originals['host/connect.py'])
 
     def test_permissions_and_concurrent_change_guard(self):
@@ -223,6 +223,11 @@ class InstallerTests(unittest.TestCase):
             (self.package / relative).write_bytes((Path(source) / relative).read_bytes())
         INSTALLER.apply_manifest(self.package, ROOT / 'manifest.json', '0.16.0')
         INSTALLER.apply_manifest(self.package, ROOT / 'manifest.json', '0.16.0', check=True)
+        check = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('check_provider_merge.py')),
+                                str(self.package / 'harnesses/opencode_native/provider.py')],
+                               capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertEqual(check.stdout.strip(), 'DUAL_CONFIG_PROVIDER_OK')
 
 
 if __name__ == '__main__':

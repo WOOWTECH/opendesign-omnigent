@@ -88,6 +88,7 @@ const PATCH_TARGETS: Record<string, string> = {
   'opencode-quota-error.patch': 'harnesses/opencode_native/forwarder.py',
   'opencode-native-interrupt.patch': 'runner/native/interrupt.py',
   'pi-custom-model-options.patch': 'harnesses/pi_native/credentials.py',
+  'opencode-user-config-merge.patch': 'harnesses/opencode_native/provider.py',
 };
 
 /** External SDKs are read-only; only the daemon's private install can be patched. */

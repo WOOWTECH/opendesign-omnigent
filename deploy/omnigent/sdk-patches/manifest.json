@@ -45,6 +45,17 @@
           "replacementSha256": "44545b582636de0a95d281e7bc9f5088355d035f0fd61dfae1b1fdeac23a44db"
         }
       ]
+    },
+    {
+      "patch": "opencode-user-config-merge.patch",
+      "patchSha256": "72fabaaee347a17938f305a09dd7fb9808ff7c0c03bc1aa46ba9e52f8ec028e3",
+      "files": [
+        {
+          "sdkRelativePath": "harnesses/opencode_native/provider.py",
+          "baseSha256": "090aa95923cbc0149e7f459a2767aa2cd26b5304bfb78a21fc056246f9cd51b1",
+          "replacementSha256": "a460658db89ebdc308cb4bb271e9f36d5da7ab440ed5006e9c2460979899dd92"
+        }
+      ]
     }
   ]
 }
