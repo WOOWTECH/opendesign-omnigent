@@ -58,6 +58,7 @@ class Service:
         self.stop_error = None
         self.runner_online = True
         self.keep_runner_online = False
+        self.fail_after_message = False
         self.stop_snapshots = 0
         self.offline = False
         self.auth = None
@@ -115,6 +116,9 @@ class Service:
         if path == "/v1/sessions/conv_owned":
             if any(c[1].endswith("/events") and c[2]["type"] == "stop_session" for c in self.calls):
                 self.stop_snapshots += 1
+            if self.fail_after_message and any(c[1].endswith("/events") and c[2]["type"] == "message" for c in self.calls):
+                return {"id": "conv_owned", "runner_online": False, "status": "failed",
+                        "last_task_error": {"code": "native_turn_error", "message": "EXTRA_SECRET"}}
             return {"id": "conv_owned", "runner_online": self.runner_online, "status": "idle"}
         raise AssertionError((method, path))
 
@@ -376,6 +380,16 @@ class BoundaryTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual("stopped", result["cleanup"])
         self.assertLessEqual(self.clock.now, 5)
+
+    def test_failed_native_session_returns_promptly_without_leaking_task_error(self):
+        self.service.sentinel = False
+        self.service.fail_after_message = True
+        result = self.make(engine="opencode", timeoutSeconds=120).verify()
+        self.assertFalse(result["ok"])
+        self.assertEqual("ENGINE_FAILED", result["reason"])
+        self.assertEqual("stopped", result["cleanup"])
+        self.assertLess(self.clock.now, 15)
+        self.assertNotIn("EXTRA_SECRET", str(result))
 
     def test_claude_start_timeout_still_stops_session(self):
         result = self.make(engine="claude", timeoutSeconds=1).verify()

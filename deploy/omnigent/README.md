@@ -32,10 +32,13 @@ This host-only contract must be deliberately updated before a frontend release.
 
 The SDK remains version 0.16.0. A shared manifest pins the original and result
 hashes of `host/connect.py`, `harnesses/opencode_native/forwarder.py`,
-`runner/native/interrupt.py`, and `harnesses/pi_native/credentials.py`.
+`runner/native/interrupt.py`, `harnesses/pi_native/credentials.py`, and
+`harnesses/opencode_native/provider.py`.
 The Pi patch includes configured `models.json` providers in Omnigent's model
-picker without exposing their API keys. Each target occurs in exactly one patch.
-Image builds apply all four patches before switching back to the application user.
+picker without exposing their API keys. The OpenCode patch combines provider
+definitions from both `opencode.jsonc` and `opencode.json` when both exist.
+Each target occurs in exactly one patch.
+Image builds apply all five patches before switching back to the application user.
 Private installs verify or apply the same patches on installation, update and
 reuse. External SDK installations are inspected without modification; an
 incompatible external SDK falls back to the integration's private installation.

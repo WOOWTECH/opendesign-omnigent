@@ -1,0 +1,85 @@
+diff --git a/omnigent/harnesses/opencode_native/provider.py b/omnigent/harnesses/opencode_native/provider.py
+index f29b8db5b..893c74715 100644
+--- a/omnigent/harnesses/opencode_native/provider.py
++++ b/omnigent/harnesses/opencode_native/provider.py
+@@ -554,7 +554,7 @@ def maybe_merge_user_provider_config(config: dict[str, object]) -> dict[str, obj
+     provider definitions (e.g. OpenAI-compatible endpoints with custom base
+     URLs). When running under Omnigent, the per-session ``XDG_CONFIG_HOME``
+     override hides this global config. This function reads the user's real
+-    config and merges any ``provider`` block into *config* so the spawned
++    config files and merges their ``provider`` blocks into *config* so the spawned
+     server sees both the user's providers (with their custom base URLs) and
+     any Omnigent-synthesized providers (e.g. Databricks gateway).
+ 
+@@ -577,32 +577,49 @@ def maybe_merge_user_provider_config(config: dict[str, object]) -> dict[str, obj
+     """
+     from omnigent.harnesses.opencode_native.bridge import user_opencode_config_path
+ 
+-    user_path = user_opencode_config_path()
+-    if user_path is None:
++    preferred_path = user_opencode_config_path()
++    if preferred_path is None:
+         return config
+ 
+-    try:
+-        raw = user_path.read_text(encoding="utf-8")
+-        # Try plain JSON first (handles .json files without comments).
+-        # If that fails, strip JSONC comments and trailing commas, then
+-        # retry (handles .jsonc).
++    # OpenCode accepts both files in one config directory. A schema-only
++    # opencode.jsonc must not hide providers defined in opencode.json.
++    other_name = "opencode.json" if preferred_path.name == "opencode.jsonc" else "opencode.jsonc"
++    paths = (preferred_path, preferred_path.with_name(other_name))
++    user_config: dict[str, object] = {}
++    for user_path in paths:
++        if not user_path.is_file():
++            continue
+         try:
+-            user_config = json.loads(raw)
++            raw = user_path.read_text(encoding="utf-8")
++            try:
++                parsed = json.loads(raw)
++            except json.JSONDecodeError:
++                parsed = json.loads(_strip_trailing_commas(_strip_jsonc_comments(raw)))
++        except (OSError, UnicodeDecodeError):
++            continue
+         except json.JSONDecodeError:
+-            cleaned = _strip_jsonc_comments(raw)
+-            cleaned = _strip_trailing_commas(cleaned)
+-            user_config = json.loads(cleaned)
+-    except (OSError, UnicodeDecodeError):
+-        return config
+-    except json.JSONDecodeError:
+-        _logger.warning(
+-            "Failed to parse user OpenCode config at %s — ignoring user providers",
+-            user_path,
+-        )
+-        return config
+-
+-    if not isinstance(user_config, dict):
+-        return config
++            _logger.warning("Failed to parse user OpenCode config at %s — ignoring this file", user_path)
++            continue
++        if not isinstance(parsed, dict):
++            continue
++        # Keep the bridge's existing JSONC preference for conflicts, while
++        # collecting distinct provider definitions and plugins from both files.
++        model = parsed.get("model")
++        if isinstance(model, str) and model:
++            user_config.setdefault("model", model)
++        providers = parsed.get("provider")
++        if isinstance(providers, dict):
++            combined = user_config.setdefault("provider", {})
++            if isinstance(combined, dict):
++                for name, definition in providers.items():
++                    combined.setdefault(name, definition)
++        plugins = parsed.get("plugin")
++        if isinstance(plugins, list):
++            combined_plugins = user_config.setdefault("plugin", [])
++            if isinstance(combined_plugins, list):
++                for plugin in plugins:
++                    if plugin not in combined_plugins:
++                        combined_plugins.append(plugin)
+ 
+     # Adopt the user's default ``model`` when the synthesized config pins none.
+     # ``setdefault`` keeps the synthesized value authoritative (gateway /

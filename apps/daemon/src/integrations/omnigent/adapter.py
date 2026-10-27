@@ -986,6 +986,7 @@ class Adapter:
                 "type": "message", "data": {"role": "user", "content": [
                     {"type": "input_text", "text": PROBE_PROMPT}]}}, timeout_seconds=45.0)
             recover_after = self.clock() + 8.0
+            next_failure_check = self.clock() + 4.0
             while True:
                 page = self.api(client, "GET", f"/v1/sessions/{quote(session_id, safe='')}/items?limit=100&order=desc")
                 items = page.get("data")
@@ -1005,6 +1006,16 @@ class Adapter:
                         "INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED",
                     } else "ENGINE_FAILED"
                     break
+                if self.clock() >= next_failure_check:
+                    snapshot = self.api(client, 'GET', f'/v1/sessions/{quote(session_id, safe="")}')
+                    if snapshot.get('id') == session_id and snapshot.get('status') == 'failed' \
+                            and snapshot.get('runner_online') is False:
+                        # Native providers may fail before emitting an error item.
+                        # The server's task message can contain provider details;
+                        # expose only the stable code and still stop this session.
+                        result['reason'] = 'ENGINE_FAILED'
+                        break
+                    next_failure_check = self.clock() + 4.0
                 if self.clock() >= deadline:
                     break
                 if key == 'claude' and self.clock() >= recover_after and deadline - self.clock() > 10 \
