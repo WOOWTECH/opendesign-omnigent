@@ -349,8 +349,8 @@ const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
  * daemon copy — `mergeDaemonConfig` ratchets the two before this runs), and
  * they did not arrive through an explicit deep link that onboarding must not
  * hijack (project links, the collab demo, the community gallery, and the
- * installed plugins page). Plugin setup may be how the user connects an agent
- * before choosing a model in OpenDesign itself.
+ * installed plugins page and its integration settings). Plugin setup may be
+ * how the user connects an agent before choosing a model in OpenDesign itself.
  *
  * Deliberately a pure predicate over a resolved config: the redirect belongs to
  * the one-shot boot pass, and expressing it as a function of "who the user is"
@@ -367,6 +367,8 @@ export function shouldRouteToFirstRunOnboarding(
     || pathname.startsWith('/community')
     || pathname === '/plugins'
     || pathname === '/plugins/'
+    || pathname === '/settings/omnigent'
+    || pathname === '/settings/omnigent/'
   ) {
     return false;
   }

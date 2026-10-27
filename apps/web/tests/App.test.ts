@@ -86,6 +86,9 @@ describe('shouldRouteToFirstRunOnboarding', () => {
 
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/plugins')).toBe(false);
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/plugins/')).toBe(false);
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/settings/omnigent')).toBe(false);
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/settings/omnigent/')).toBe(false);
+    expect(shouldRouteToFirstRunOnboarding(unfinished, '/settings/general')).toBe(true);
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/automations')).toBe(true);
   });
 });
