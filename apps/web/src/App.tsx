@@ -164,7 +164,7 @@ import {
   createPluginUseHandoff,
   stashHomePromptHandoff,
 } from './components/home-hero/plugin-authoring';
-import { goBack, navigate, useRoute, type Route } from './router';
+import { goBack, logicalPathname, navigate, useRoute, type Route } from './router';
 import {
   fetchDaemonConfig,
   DEFAULT_CONFIG,
@@ -2321,7 +2321,7 @@ function AppInner() {
         // banner keys off `privacyDecisionAt`. They may coexist on the
         // first launch; the banner sits above the modal layer so it
         // stays actionable regardless of the active view.
-        if (shouldRouteToFirstRunOnboarding(next, window.location.pathname)) {
+        if (shouldRouteToFirstRunOnboarding(next, logicalPathname(window.location.pathname))) {
           navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
         }
         setDaemonConfigLoaded(true);
