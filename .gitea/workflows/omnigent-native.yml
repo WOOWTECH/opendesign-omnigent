@@ -132,6 +132,7 @@ jobs:
         timeout-minutes: 10
         run: |
           pnpm --filter @open-design/web test \
+            tests/App.test.ts \
             tests/components/OmnigentIntegration.test.tsx \
             tests/components/OmnigentProviderGuide.test.tsx \
             tests/components/ExtensionsMarketplace.builtin-launchers.test.tsx \
