@@ -31,11 +31,11 @@ base MCP hashes. The packager rejects web/contracts source changes relative to
 This host-only contract must be deliberately updated before a frontend release.
 
 The SDK remains version 0.16.0. A shared manifest pins the original and result
-hashes of `host/connect.py`, `harnesses/opencode_native/forwarder.py` and
-`runner/native/interrupt.py`. The third independent asset is
-`opencode-native-interrupt.patch`; the existing host and quota patches retain
-their reviewed bytes and target hashes. Each target occurs in exactly one patch.
-Image builds apply all three patches before switching back to the application user.
+hashes of `host/connect.py`, `harnesses/opencode_native/forwarder.py`,
+`runner/native/interrupt.py`, and `harnesses/pi_native/credentials.py`.
+The Pi patch includes configured `models.json` providers in Omnigent's model
+picker without exposing their API keys. Each target occurs in exactly one patch.
+Image builds apply all four patches before switching back to the application user.
 Private installs verify or apply the same patches on installation, update and
 reuse. External SDK installations are inspected without modification; an
 incompatible external SDK falls back to the integration's private installation.

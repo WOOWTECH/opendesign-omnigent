@@ -34,6 +34,17 @@
           "replacementSha256": "422350957c6164cddb8f4d16b7c79c09561eace9bc1f43f802b6f79bbb562cb7"
         }
       ]
+    },
+    {
+      "patch": "pi-custom-model-options.patch",
+      "patchSha256": "6c4d607f75f81b79a44c6072dbc461d21c262049cc9bacb5dce565907ae8c921",
+      "files": [
+        {
+          "sdkRelativePath": "harnesses/pi_native/credentials.py",
+          "baseSha256": "371b3d604a26d5e1e64bb75fcc99d29b10a1c601edc596ea48ee32e6198d23c5",
+          "replacementSha256": "44545b582636de0a95d281e7bc9f5088355d035f0fd61dfae1b1fdeac23a44db"
+        }
+      ]
     }
   ]
 }

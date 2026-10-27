@@ -62,7 +62,8 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(manifest['baseSourceRevision'], 'b3270069b93548bbfced8cb17fa90039fd88422a')
             self.assertIn('Inherited unchanged', manifest['webRuntime'])
             self.assertEqual({entry['patch'] for entry in manifest['sdkPatches']['patches']},
-                             {'opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch'})
+                             {'opencode-host-model-options.patch', 'opencode-quota-error.patch',
+                              'opencode-native-interrupt.patch', 'pi-custom-model-options.patch'})
             for entry in manifest['sdkPatches']['patches']:
                 name = 'daemon-dist/integrations/omnigent/sdk-patches/' + entry['patch']
                 self.assertEqual(archive.extractfile(name).read(), (self.source / entry['patch']).read_bytes())

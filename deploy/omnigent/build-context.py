@@ -68,7 +68,8 @@ def main():
                         'integrations/omnigent/sdk-patches/manifest.json',
                         'integrations/omnigent/sdk-patches/opencode-host-model-options.patch',
                          'integrations/omnigent/sdk-patches/opencode-quota-error.patch',
-                         'integrations/omnigent/sdk-patches/opencode-native-interrupt.patch'],
+                         'integrations/omnigent/sdk-patches/opencode-native-interrupt.patch',
+                         'integrations/omnigent/sdk-patches/pi-custom-model-options.patch'],
         'bundled-omnigent': ['open-design.json'],
     }
     entries = {}
@@ -94,7 +95,8 @@ def main():
 
     sdk_prefix = integration_prefix + 'sdk-patches/'
     sdk_manifest = json.loads(entries[sdk_prefix + 'manifest.json'])
-    expected_patches = {'opencode-host-model-options.patch', 'opencode-quota-error.patch', 'opencode-native-interrupt.patch'}
+    expected_patches = {'opencode-host-model-options.patch', 'opencode-quota-error.patch',
+                        'opencode-native-interrupt.patch', 'pi-custom-model-options.patch'}
     patches = sdk_manifest.get('patches', [])
     if (sdk_manifest.get('schemaVersion') != 2 or sdk_manifest.get('sdkVersion') != '0.16.0'
             or len(patches) != len(expected_patches) or {p.get('patch') for p in patches} != expected_patches):

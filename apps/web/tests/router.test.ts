@@ -17,13 +17,25 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildPath, parseRoute, type Route } from '../src/router';
+import { buildPath, logicalPathname, parseRoute, type Route } from '../src/router';
 
 function roundTrip(route: Route): Route {
   return parseRoute(buildPath(route));
 }
 
 describe('parseRoute / buildPath (issue #1505)', () => {
+  it('keeps HA Ingress URLs reloadable while parsing their logical route', () => {
+    const prefix = '/api/hassio_ingress/abcdefghijklmnop';
+    expect(logicalPathname(`${prefix}/settings/omnigent`, prefix)).toBe('/settings/omnigent');
+    expect(logicalPathname(prefix, prefix)).toBe('/');
+    expect(logicalPathname('/settings/omnigent', prefix)).toBe('/settings/omnigent');
+    expect(logicalPathname('/api/hassio_ingress/other/settings', prefix))
+      .toBe('/api/hassio_ingress/other/settings');
+    expect(logicalPathname(`${prefix}/settings/omnigent`, '/api/hassio_ingress/short'))
+      .toBe(`${prefix}/settings/omnigent`);
+    expect(parseRoute(logicalPathname(`${prefix}/settings/omnigent`, prefix)))
+      .toEqual({ kind: 'home', view: 'settings', settingsSection: 'omnigent' });
+  });
   it('round-trips the Omnigent settings launcher and tolerates a trailing slash', () => {
     const route: Route = { kind: 'home', view: 'settings', settingsSection: 'omnigent' };
     expect(buildPath(route)).toBe('/settings/omnigent');

@@ -74,8 +74,19 @@ export type Route =
   // Community template gallery — browse and remix shared design templates.
   | { kind: 'community' };
 
+/** Keep the HA Ingress transport prefix in the browser URL so deep links reload. */
+export function logicalPathname(pathname: string, ingressPath?: string): string {
+  const candidate = ingressPath ?? (typeof window === 'undefined'
+    ? undefined
+    : (window as Window & { __OD_INGRESS_PATH__?: unknown }).__OD_INGRESS_PATH__);
+  if (typeof candidate !== 'string'
+    || !/^\/api\/hassio_ingress\/[A-Za-z0-9_-]{16,128}$/.test(candidate)) return pathname;
+  return pathname === candidate ? '/'
+    : pathname.startsWith(`${candidate}/`) ? pathname.slice(candidate.length) : pathname;
+}
+
 export function parseRoute(pathname: string): Route {
-  const parts = pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+  const parts = logicalPathname(pathname).replace(/\/+$/, '').split('/').filter(Boolean);
   if (parts.length === 0) return { kind: 'home', view: 'home' };
   if (parts[0] === 'onboarding') {
     return { kind: 'home', view: 'onboarding' };
@@ -304,7 +315,7 @@ function readHistoryIndex(): number {
 }
 
 function readHistoryLocation(): AcceptedHistoryLocation {
-  return { pathname: window.location.pathname, index: readHistoryIndex() };
+  return { pathname: logicalPathname(window.location.pathname), index: readHistoryIndex() };
 }
 
 function isSameHistoryLocation(
@@ -426,7 +437,7 @@ interface NavigationOptions {
 
 function commitNavigation(route: Route, opts: NavigationOptions = {}): void {
   const target = buildPath(route);
-  if (target === window.location.pathname) return;
+  if (target === logicalPathname(window.location.pathname)) return;
   const index = readHistoryIndex();
   // `replace` keeps the current depth (it swaps the entry in place); a push
   // adds one level so the entry we are leaving becomes the "previous layer".
@@ -477,7 +488,7 @@ function getRouteSnapshot(): Route {
   // Native Back/Forward mutates window.location before its asynchronous guard
   // resolves. Keep render-time reads on the last accepted route until the
   // coordinator explicitly publishes the traversal.
-  const pathname = acceptedHistoryLocation?.pathname ?? window.location.pathname;
+  const pathname = acceptedHistoryLocation?.pathname ?? logicalPathname(window.location.pathname);
   if (cachedPathname !== pathname || cachedRoute === null) {
     cachedPathname = pathname;
     cachedRoute = parseRoute(pathname);
