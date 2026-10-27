@@ -15,6 +15,7 @@
     "integrations/omnigent/sdk-patches/manifest.json",
     "integrations/omnigent/sdk-patches/opencode-host-model-options.patch",
     "integrations/omnigent/sdk-patches/opencode-quota-error.patch",
-    "integrations/omnigent/sdk-patches/opencode-native-interrupt.patch"
+    "integrations/omnigent/sdk-patches/opencode-native-interrupt.patch",
+    "integrations/omnigent/sdk-patches/pi-custom-model-options.patch"
   ]
 }

@@ -14,6 +14,7 @@ PATCH_TARGETS = {
     "opencode-host-model-options.patch": "host/connect.py",
     "opencode-quota-error.patch": "harnesses/opencode_native/forwarder.py",
     "opencode-native-interrupt.patch": "runner/native/interrupt.py",
+    "pi-custom-model-options.patch": "harnesses/pi_native/credentials.py",
 }
 HASH = re.compile(r"[a-f0-9]{64}")
 HUNK = re.compile(rb"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:[^\n]*)\n")

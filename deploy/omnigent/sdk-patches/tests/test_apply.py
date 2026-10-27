@@ -58,9 +58,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual((self.package / relative).read_bytes(), original)
         self.assertEqual(list(self.package.rglob('.sdk-patch-*')), [])
 
-    def test_three_patches_four_quota_hunks_and_idempotent_reuse(self):
+    def test_four_patches_four_quota_hunks_and_idempotent_reuse(self):
         quota = self.assets / 'opencode-quota-error.patch'
-        self.assertEqual(len(self.manifest['patches']), 3)
+        self.assertEqual(len(self.manifest['patches']), 4)
         self.assertEqual(sum(line.startswith(b'@@ ') for line in quota.read_bytes().splitlines()), 4)
         self.apply()
         for relative, result in self.results.items():
@@ -159,15 +159,16 @@ class InstallerTests(unittest.TestCase):
 
     def test_manifest_cannot_omit_or_redirect_any_patch(self):
         original = json.dumps(self.manifest)
-        for index in range(3):
+        count = len(self.manifest['patches'])
+        for index in range(count):
             for mode in ['omitted', 'duplicate', 'traversal', 'overlapping-target', 'wrong-version']:
                 with self.subTest(index=index, mode=mode):
                     self.manifest = json.loads(original)
                     if mode == 'omitted': self.manifest['patches'].pop(index)
-                    if mode == 'duplicate': self.manifest['patches'][index] = self.manifest['patches'][(index + 1) % 3]
+                    if mode == 'duplicate': self.manifest['patches'][index] = self.manifest['patches'][(index + 1) % count]
                     if mode == 'traversal': self.manifest['patches'][index]['files'][0]['sdkRelativePath'] = '../outside.py'
                     if mode == 'overlapping-target':
-                        self.manifest['patches'][index]['files'][0]['sdkRelativePath'] = self.manifest['patches'][(index + 1) % 3]['files'][0]['sdkRelativePath']
+                        self.manifest['patches'][index]['files'][0]['sdkRelativePath'] = self.manifest['patches'][(index + 1) % count]['files'][0]['sdkRelativePath']
                     if mode == 'wrong-version': self.manifest['sdkVersion'] = '0.17.0'
                     self.save_manifest()
                     with self.assertRaisesRegex(ValueError, 'INVALID_MANIFEST'): self.apply()
